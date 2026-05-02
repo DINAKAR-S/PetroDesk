@@ -1,5 +1,5 @@
 {
   "buildCommand": "pnpm --filter @petrodisk/web build",
-  "outputDirectory": "apps/web/dist",
+  "outputDirectory": "dist",
   "installCommand": "pnpm install"
 }
