@@ -1,0 +1,6 @@
+{
+  "buildCommand": "pnpm --filter @petrodisk/web build",
+  "outputDirectory": "apps/web/dist",
+  "installCommand": "pnpm install",
+  "framework": "vite"
+}

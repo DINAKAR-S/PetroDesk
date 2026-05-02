@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+.cache/
+
+# Environment variables — never commit
+.env
+.env.local
+.env.production
+
+# Claude / AI tooling — not needed in repo
+.claude/
+.claude-flow/
+.code-review-graph/
+.agents/
+.mcp.json
+
+# Design / stitch assets — not source code
+element_clones/
+stitch_petrodisk_saas_dashboard/
+
+# Internal planning docs — not needed for running the app
+CLAUDE.md
+PetroDisk_PRD.md
+PetroDisk_Phase1_PRP.md
+PetroDisk_TechStack.md
+ROLES_AND_FEATURES.md
+SDE_PLAN.md
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/settings.json
+*.suo
+*.user
