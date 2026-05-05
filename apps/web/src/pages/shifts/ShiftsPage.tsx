@@ -843,10 +843,27 @@ function ExpenseCatalogRow({ category, onAdd }: ExpenseCatalogRowProps) {
 
 export function CloseShiftModal({ shift, onClose }: CloseShiftModalProps) {
   const loadNozzleReadings = useShiftsStore((s) => s.loadNozzleReadings)
+  const loadShiftEntries = useShiftsStore((s) => s.loadShiftEntries)
   const closeShift = useShiftsStore((s) => s.closeShift)
   const readings = useShiftsStore((s) =>
     s.nozzleReadings.filter((r) => r.shiftId === shift.id),
   )
+  const persistedOtherSales = useShiftsStore((s) =>
+    s.otherSales.filter((o) => o.shiftId === shift.id),
+  )
+  const persistedElectronic = useShiftsStore((s) =>
+    s.electronicEntries.filter((e) => e.shiftId === shift.id),
+  )
+  const persistedCredit = useShiftsStore((s) =>
+    s.creditEntries.filter((c) => c.shiftId === shift.id),
+  )
+  const persistedExpenses = useShiftsStore((s) =>
+    s.expenseEntries.filter((e) => e.shiftId === shift.id),
+  )
+
+  const isEdit = shift.status === 'closed'
+  const title = `${isEdit ? 'Edit' : 'Close'} Shift · ${shift.salesmanName}`
+  const submitLabel = isEdit ? 'Save Changes' : 'Close Shift'
 
   // Phase 2 catalogs
   const otherSalesItems = useAppStore((s) => s.otherSalesItems)
@@ -896,13 +913,15 @@ export function CloseShiftModal({ shift, onClose }: CloseShiftModalProps) {
 
   useEffect(() => {
     let cancelled = false
-    loadNozzleReadings(shift.id).then(() => {
+    const tasks: Promise<unknown>[] = [loadNozzleReadings(shift.id)]
+    if (isEdit) tasks.push(loadShiftEntries(shift.id))
+    Promise.all(tasks).then(() => {
       if (!cancelled) setHydrated(true)
     })
     return () => {
       cancelled = true
     }
-  }, [loadNozzleReadings, shift.id])
+  }, [loadNozzleReadings, loadShiftEntries, shift.id, isEdit])
 
   useEffect(() => {
     if (!hydrated) return
@@ -916,11 +935,53 @@ export function CloseShiftModal({ shift, onClose }: CloseShiftModalProps) {
         slot: r.slot,
         openingCumVolume: r.openingCumVolume,
         openingCumSale: r.openingCumSale,
-        closingCumVolume: '',
-        closingCumSale: '',
+        closingCumVolume: isEdit && r.closingCumVolume != null ? String(r.closingCumVolume) : '',
+        closingCumSale: isEdit && r.closingCumSale != null ? String(r.closingCumSale) : '',
       })),
     )
-  }, [hydrated, readings, rows.length])
+    if (isEdit) {
+      setTesting({
+        msVolume: shift.testingMsVolume ? String(shift.testingMsVolume) : '',
+        msSale: shift.testingMsSale ? String(shift.testingMsSale) : '',
+        hsdVolume: shift.testingHsdVolume ? String(shift.testingHsdVolume) : '',
+        hsdSale: shift.testingHsdSale ? String(shift.testingHsdSale) : '',
+      })
+      setOtherSalesEntries(
+        persistedOtherSales.map((o) => ({
+          itemId: o.itemId,
+          itemName: o.itemName,
+          quantity: o.quantity,
+          amount: o.amount,
+        })),
+      )
+      setElectronicEntries(
+        persistedElectronic.map((e) => ({
+          methodId: e.methodId,
+          methodName: e.methodName,
+          amount: e.amount,
+        })),
+      )
+      setCreditEntries(
+        persistedCredit.map((c) => ({
+          customerId: c.customerId,
+          customerName: c.customerName,
+          amount: c.amount,
+        })),
+      )
+      setExpenseEntries(
+        persistedExpenses.map((e) => ({
+          categoryId: e.categoryId,
+          categoryName: e.categoryName,
+          amount: e.amount,
+          description: e.description,
+        })),
+      )
+      setCashInHand(shift.cashInHand ? String(shift.cashInHand) : '')
+      setHandoverToNext(shift.handoverToNext ? String(shift.handoverToNext) : '')
+      setDepositToOwner(shift.depositToOwner ? String(shift.depositToOwner) : '')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated])
 
   function updateRow(idx: number, patch: Partial<ClosingRowState>): void {
     setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)))
@@ -1103,7 +1164,9 @@ export function CloseShiftModal({ shift, onClose }: CloseShiftModalProps) {
       })
       onClose()
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to close shift')
+      setError(
+        err instanceof Error ? err.message : `Failed to ${isEdit ? 'save changes' : 'close shift'}`,
+      )
     } finally {
       setSubmitting(false)
     }
@@ -1118,15 +1181,18 @@ export function CloseShiftModal({ shift, onClose }: CloseShiftModalProps) {
         className="bg-surface-container-lowest w-full h-full sm:h-auto sm:max-w-3xl sm:mx-4 sm:rounded-2xl sm:max-h-[90vh] shadow-xl p-4 sm:p-6 overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-on-surface text-lg font-semibold mb-1">Close Shift</h2>
+        <h2 className="text-on-surface text-lg font-semibold mb-1">{title}</h2>
         <p className="text-on-surface-variant text-sm mb-5">
-          {shift.salesmanName} · opened {formatTime(shift.openedAt)}
+          opened {formatTime(shift.openedAt)}
+          {isEdit && shift.closedAt ? ` · closed ${formatTime(shift.closedAt)}` : ''}
         </p>
 
         {!hydrated ? (
           <p className="text-on-surface-variant text-sm">Loading…</p>
         ) : rows.length === 0 ? (
-          <p className="text-on-surface-variant text-sm">No nozzle readings to close.</p>
+          <p className="text-on-surface-variant text-sm">
+            No nozzle readings to {isEdit ? 'edit' : 'close'}.
+          </p>
         ) : (
           <form onSubmit={handleSubmit} className="flex flex-col gap-5">
             {/* A. Per-nozzle rows */}
@@ -1777,7 +1843,7 @@ export function CloseShiftModal({ shift, onClose }: CloseShiftModalProps) {
                 disabled={submitDisabled}
                 className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-xl text-sm font-medium bg-primary text-on-primary hover:opacity-90 transition-opacity disabled:opacity-60"
               >
-                {submitting ? 'Closing…' : 'Close Shift'}
+                {submitting ? (isEdit ? 'Saving…' : 'Closing…') : submitLabel}
               </button>
             </div>
           </form>
@@ -2073,6 +2139,15 @@ export default function ShiftsPage() {
                       )}
                       {isOwnerOrManager && shift.status === 'closed' && (
                         <button
+                          onClick={() => setShiftToClose(shift)}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium border border-outline-variant text-on-surface-variant hover:bg-surface-container transition-colors"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">edit</span>
+                          Edit
+                        </button>
+                      )}
+                      {isOwnerOrManager && shift.status === 'closed' && (
+                        <button
                           onClick={() => flagShift(shift.id)}
                           className="px-3 py-1.5 rounded-lg text-xs font-medium border border-rose-300 text-rose-700 hover:bg-rose-50 transition-colors"
                         >
@@ -2207,6 +2282,17 @@ export default function ShiftsPage() {
                                   className="px-3 py-1 rounded-lg text-xs font-medium border border-outline-variant text-on-surface-variant hover:bg-surface-container transition-colors"
                                 >
                                   Edit Openings
+                                </button>
+                              )}
+                              {isOwnerOrManager && shift.status === 'closed' && (
+                                <button
+                                  onClick={() => setShiftToClose(shift)}
+                                  className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium border border-outline-variant text-on-surface-variant hover:bg-surface-container transition-colors"
+                                >
+                                  <span className="material-symbols-outlined text-[16px]">
+                                    edit
+                                  </span>
+                                  Edit
                                 </button>
                               )}
                               {isOwnerOrManager && shift.status === 'closed' && (

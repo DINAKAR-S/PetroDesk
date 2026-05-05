@@ -1798,14 +1798,15 @@ export default function SettingsPage() {
 
   return (
     <div className="max-w-3xl">
-      {/* Tabs — horizontal scroll on mobile, no wrap */}
-      <div className="flex gap-1 bg-surface-container p-1 rounded-xl mb-6 overflow-x-auto whitespace-nowrap [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {/* Tabs — horizontal scroll on mobile, wrap to multiple rows on desktop
+          (so all tabs are visible without scrolling on wider screens). */}
+      <div className="flex gap-1 bg-surface-container p-1 rounded-xl mb-6 overflow-x-auto whitespace-nowrap sm:flex-wrap sm:overflow-visible sm:whitespace-normal [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {visibleTabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={cn(
-              'flex items-center gap-2 flex-shrink-0 sm:flex-1 justify-center py-2 px-3 rounded-lg text-sm font-medium transition-colors',
+              'flex items-center gap-2 flex-shrink-0 justify-center py-2 px-3 rounded-lg text-sm font-medium transition-colors',
               activeTab === tab.id
                 ? 'bg-surface-container-lowest text-on-surface shadow-sm font-semibold'
                 : 'text-on-surface-variant hover:text-on-surface',

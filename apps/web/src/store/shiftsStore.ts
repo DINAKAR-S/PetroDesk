@@ -402,14 +402,19 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
 
   closeShift: async (input) => {
     // Guard against double-close: if shift is already closed, reject before any writes.
+    // Allow both initial close (status='open') and re-close/edit (status='closed').
+    // For an edit on a closed shift we restore the previous tank-stock decrement
+    // before re-applying with the new values further below.
     const { data: shiftStatus } = await supabase
       .from('shifts')
       .select('status')
       .eq('id', input.shiftId)
       .single()
-    if (!shiftStatus || (shiftStatus as Record<string, unknown>).status !== 'open') {
-      throw new Error('Shift is not open — cannot close')
+    const currentStatus = (shiftStatus as Record<string, unknown> | null)?.status
+    if (currentStatus !== 'open' && currentStatus !== 'closed') {
+      throw new Error('Shift is not in an editable state')
     }
+    const isEdit = currentStatus === 'closed'
 
     const { data: readingRows, error: loadErr } = await supabase
       .from('nozzle_readings')
@@ -637,9 +642,12 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
       if (error) throw new Error(error.message)
     }
 
-    // Tank stock decrement runs BEFORE the status flip. If a tank update
-    // fails, the shift stays 'open' so the user can retry without producing
-    // a closed-but-stock-not-decremented shift that has no recovery path.
+    // Tank stock: runs BEFORE the status flip. If a tank update fails, the
+    // shift stays in its previous state and the user can retry.
+    //
+    // When editing a closed shift, we ALSO restore the previous decrement
+    // first (using the readings' existing `litres_sold` from the prior close)
+    // so the new decrement applies cleanly. Net effect = (new − old) per tank.
     const nozzleIds = updates.map((u) => u.nozzleId)
     if (nozzleIds.length > 0) {
       const { data: nozzleRows, error: nozzlesErr } = await supabase
@@ -655,14 +663,28 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
           nozzleToTank.set(n.id as string, n.tank_id as string)
         }
 
+        const updateTankStock = useAppStore.getState().updateTankStock
+
+        // Restore old decrement (only when editing a closed shift).
+        if (isEdit) {
+          const oldTankDelta = new Map<string, number>()
+          for (const r of readings) {
+            const tankId = nozzleToTank.get(r.nozzleId)
+            if (!tankId || r.litresSold === 0) continue
+            oldTankDelta.set(tankId, (oldTankDelta.get(tankId) ?? 0) + r.litresSold)
+          }
+          for (const [tankId, litres] of oldTankDelta) {
+            await updateTankStock(tankId, +litres) // ADD back the old decrement
+          }
+        }
+
+        // Apply new decrement.
         const tankDelta = new Map<string, number>()
         for (const u of updates) {
           const tankId = nozzleToTank.get(u.nozzleId)
           if (!tankId) continue
           tankDelta.set(tankId, (tankDelta.get(tankId) ?? 0) + u.litresSold)
         }
-
-        const updateTankStock = useAppStore.getState().updateTankStock
         for (const [tankId, litres] of tankDelta) {
           await updateTankStock(tankId, -litres)
         }
