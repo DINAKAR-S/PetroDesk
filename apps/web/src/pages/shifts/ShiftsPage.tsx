@@ -56,7 +56,7 @@ interface OpenShiftModalProps {
   onClose: () => void
 }
 
-function OpenShiftModal({ users, dispenserUnits, currentUser, onClose }: OpenShiftModalProps) {
+export function OpenShiftModal({ users, dispenserUnits, currentUser, onClose }: OpenShiftModalProps) {
   const openShift = useShiftsStore((s) => s.openShift)
   const getOpeningReadingsForDU = useShiftsStore((s) => s.getOpeningReadingsForDU)
 
@@ -210,7 +210,7 @@ function OpenShiftModal({ users, dispenserUnits, currentUser, onClose }: OpenShi
               </div>
             ) : (
               <div className="flex flex-col gap-2">
-                {openings.map((o) => (
+                {openings.map((o, i) => (
                   <div
                     key={o.nozzleId}
                     className="px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container/40"
@@ -218,25 +218,71 @@ function OpenShiftModal({ users, dispenserUnits, currentUser, onClose }: OpenShi
                     <div className="text-on-surface text-sm font-medium">
                       Nozzle {o.slot} — {FUEL_LABELS[o.fuelType]} — {o.nozzleName}
                     </div>
-                    <div className="mt-1 grid grid-cols-2 gap-2 text-xs text-on-surface-variant">
-                      <div>
-                        CumVolume:{' '}
-                        <span className="text-on-surface font-medium">
-                          {o.openingCumVolume.toLocaleString('en-IN')}
-                        </span>
+                    {isSalesman ? (
+                      <div className="mt-1 grid grid-cols-2 gap-2 text-xs text-on-surface-variant">
+                        <div>
+                          CumVolume:{' '}
+                          <span className="text-on-surface font-medium">
+                            {o.openingCumVolume.toLocaleString('en-IN')}
+                          </span>
+                        </div>
+                        <div>
+                          CumSale:{' '}
+                          <span className="text-on-surface font-medium">
+                            ₹{o.openingCumSale.toLocaleString('en-IN')}
+                          </span>
+                        </div>
                       </div>
-                      <div>
-                        CumSale:{' '}
-                        <span className="text-on-surface font-medium">
-                          ₹{o.openingCumSale.toLocaleString('en-IN')}
-                        </span>
+                    ) : (
+                      <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <label className="flex flex-col gap-1 text-xs text-on-surface-variant">
+                          CumVolume (L)
+                          <input
+                            type="number"
+                            step="0.001"
+                            inputMode="decimal"
+                            value={o.openingCumVolume}
+                            onChange={(e) => {
+                              const v = e.target.value === '' ? 0 : Number(e.target.value)
+                              setOpenings((prev) =>
+                                prev.map((p, idx) =>
+                                  idx === i ? { ...p, openingCumVolume: v } : p,
+                                ),
+                              )
+                            }}
+                            className="px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-sm text-on-surface"
+                          />
+                        </label>
+                        <label className="flex flex-col gap-1 text-xs text-on-surface-variant">
+                          CumSale (₹)
+                          <input
+                            type="number"
+                            step="0.01"
+                            inputMode="decimal"
+                            value={o.openingCumSale}
+                            onChange={(e) => {
+                              const v = e.target.value === '' ? 0 : Number(e.target.value)
+                              setOpenings((prev) =>
+                                prev.map((p, idx) =>
+                                  idx === i ? { ...p, openingCumSale: v } : p,
+                                ),
+                              )
+                            }}
+                            className="px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-sm text-on-surface"
+                          />
+                        </label>
                       </div>
-                    </div>
+                    )}
                   </div>
                 ))}
                 {isSalesman && openings.length > 0 && (
                   <p className="text-xs text-on-surface-variant italic">
                     If a value is wrong, ask your manager to fix it before closing.
+                  </p>
+                )}
+                {!isSalesman && openings.length > 0 && (
+                  <p className="text-xs text-on-surface-variant italic">
+                    Pre-filled from the last shift. Override with the current slip values if needed before opening.
                   </p>
                 )}
               </div>
@@ -291,7 +337,7 @@ interface EditableOpeningRow {
   openingCumSale: string
 }
 
-function EditOpeningReadingsModal({ shift, onClose }: EditOpeningReadingsModalProps) {
+export function EditOpeningReadingsModal({ shift, onClose }: EditOpeningReadingsModalProps) {
   const loadNozzleReadings = useShiftsStore((s) => s.loadNozzleReadings)
   const updateOpeningReadings = useShiftsStore((s) => s.updateOpeningReadings)
   const readings = useShiftsStore((s) =>
@@ -462,7 +508,7 @@ interface ClosingRowState {
   closingCumSale: string
 }
 
-function CloseShiftModal({ shift, onClose }: CloseShiftModalProps) {
+export function CloseShiftModal({ shift, onClose }: CloseShiftModalProps) {
   const loadNozzleReadings = useShiftsStore((s) => s.loadNozzleReadings)
   const closeShift = useShiftsStore((s) => s.closeShift)
   const readings = useShiftsStore((s) =>

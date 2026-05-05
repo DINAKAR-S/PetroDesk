@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from '@/store/authStore'
 import { useAppStore } from '@/store/appStore'
 import { useShiftsStore } from '@/store/shiftsStore'
+// useAuthStore.logout is invoked in DataLoader if the persisted user disappears.
 import LoginPage from '@/pages/auth/LoginPage'
 import RoleSelectorPage from '@/pages/auth/RoleSelectorPage'
 import AppLayout from '@/components/layout/AppLayout'
@@ -14,8 +15,9 @@ import ShiftsPage from '@/pages/shifts/ShiftsPage'
 import ReportsPage from '@/pages/reports/ReportsPage'
 
 function DataLoader() {
-  const { loadAll } = useAppStore()
+  const { loadAll, users } = useAppStore()
   const { loadShifts, loadDeliveries, loadExpenses } = useShiftsStore()
+  const { currentUser, isAuthenticated, logout } = useAuthStore()
 
   useEffect(() => {
     loadAll()
@@ -23,6 +25,16 @@ function DataLoader() {
     loadDeliveries()
     loadExpenses()
   }, [loadAll, loadShifts, loadDeliveries, loadExpenses])
+
+  // Stale-auth detection: after data loads, if the persisted user no longer
+  // exists in the staff list (e.g. DB was wiped), force a clean logout so we
+  // land on /login fresh instead of breaking on a phantom user id.
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser) return
+    if (users.length === 0) return // still loading
+    const stillExists = users.some((u) => u.id === currentUser.id)
+    if (!stillExists) logout()
+  }, [users, currentUser, isAuthenticated, logout])
 
   return null
 }

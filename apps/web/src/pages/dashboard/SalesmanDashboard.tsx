@@ -1,8 +1,13 @@
+import { useState } from 'react'
 import { useAppStore } from '@/store/appStore'
 import { useAuthStore } from '@/store/authStore'
 import { useShiftsStore } from '@/store/shiftsStore'
 import { cn } from '@/lib/utils'
 import { FUEL_LABELS } from '@/lib/constants'
+import {
+  OpenShiftModal,
+  CloseShiftModal,
+} from '@/pages/shifts/ShiftsPage'
 
 const STATUS_STYLES: Record<string, string> = {
   closed: 'bg-emerald-50 text-emerald-700',
@@ -18,9 +23,11 @@ function hoursElapsed(openedAt: string): string {
 }
 
 export default function SalesmanDashboard() {
-  const { nozzles } = useAppStore()
+  const { nozzles, users, dispenserUnits } = useAppStore()
   const { currentUser } = useAuthStore()
   const { shifts } = useShiftsStore()
+
+  const [openModal, setOpenModal] = useState<'open' | 'close' | null>(null)
 
   const myShifts = shifts.filter((s) => s.salesmanId === currentUser?.id)
   const activeShift = myShifts.find((s) => s.status === 'open') ?? null
@@ -28,9 +35,10 @@ export default function SalesmanDashboard() {
 
   const totalLitres = myShifts.reduce((sum, s) => sum + s.totalLitresSold, 0)
   const totalCash = myShifts.reduce((sum, s) => sum + s.totalCashCollected, 0)
-  const avgVariance = myShifts.length > 0
-    ? myShifts.reduce((sum, s) => sum + s.cashVariance, 0) / myShifts.length
-    : 0
+  const avgVariance =
+    myShifts.length > 0
+      ? myShifts.reduce((sum, s) => sum + s.cashVariance, 0) / myShifts.length
+      : 0
 
   return (
     <div className="flex flex-col gap-6 sm:gap-8 max-w-3xl">
@@ -42,19 +50,39 @@ export default function SalesmanDashboard() {
             </span>
           </div>
           <p className="text-on-surface font-semibold">
-            Opened at {new Date(activeShift.openedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+            Opened at{' '}
+            {new Date(activeShift.openedAt).toLocaleTimeString('en-IN', {
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: true,
+            })}
           </p>
           <p className="text-on-surface-variant text-sm mt-1">
             Elapsed: {hoursElapsed(activeShift.openedAt)}
           </p>
-          <p className="text-blue-600 text-sm mt-3 font-medium">
-            Go to Shifts to close this shift
-          </p>
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={() => setOpenModal('close')}
+              className="w-full sm:w-auto px-5 py-2.5 rounded-xl text-sm font-semibold bg-secondary-container text-on-secondary hover:opacity-90 transition-opacity"
+            >
+              Close Shift
+            </button>
+          </div>
         </div>
       ) : (
         <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 sm:p-6">
           <p className="text-emerald-700 font-semibold">No active shift</p>
-          <p className="text-emerald-600 text-sm mt-1">Start a new shift from the Shifts page</p>
+          <p className="text-emerald-600 text-sm mt-1">Start a new shift to begin the day.</p>
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={() => setOpenModal('open')}
+              className="w-full sm:w-auto px-5 py-2.5 rounded-xl text-sm font-semibold bg-primary text-on-primary hover:opacity-90 transition-opacity"
+            >
+              + Open Shift
+            </button>
+          </div>
         </div>
       )}
 
@@ -80,7 +108,12 @@ export default function SalesmanDashboard() {
         </div>
         <div className="bg-surface-container-lowest p-4 sm:p-6 rounded-xl border border-outline-variant shadow-sm">
           <p className="text-on-surface-variant text-sm font-medium">Avg Cash Variance</p>
-          <p className={cn('text-xl sm:text-2xl font-bold mt-2 break-words', avgVariance < 0 ? 'text-rose-600' : avgVariance > 0 ? 'text-emerald-600' : 'text-on-surface')}>
+          <p
+            className={cn(
+              'text-xl sm:text-2xl font-bold mt-2 break-words',
+              avgVariance < 0 ? 'text-rose-600' : avgVariance > 0 ? 'text-emerald-600' : 'text-on-surface',
+            )}
+          >
             {avgVariance > 0 ? '+' : ''}₹{Math.round(avgVariance).toLocaleString('en-IN')}
           </p>
           <p className="text-on-surface-variant text-xs mt-1">per shift</p>
@@ -99,12 +132,23 @@ export default function SalesmanDashboard() {
             </div>
           ) : (
             recentShifts.map((shift) => (
-              <div key={shift.id} className="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm p-4">
+              <div
+                key={shift.id}
+                className="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm p-4"
+              >
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <p className="text-sm text-on-surface-variant">
-                    {new Date(shift.openedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                    {new Date(shift.openedAt).toLocaleDateString('en-IN', {
+                      day: '2-digit',
+                      month: 'short',
+                    })}
                   </p>
-                  <span className={cn('shrink-0 px-2 py-1 rounded-full text-xs font-semibold capitalize', STATUS_STYLES[shift.status])}>
+                  <span
+                    className={cn(
+                      'shrink-0 px-2 py-1 rounded-full text-xs font-semibold capitalize',
+                      STATUS_STYLES[shift.status],
+                    )}
+                  >
                     {shift.status}
                   </span>
                 </div>
@@ -124,10 +168,17 @@ export default function SalesmanDashboard() {
                   <div>
                     <p className="text-xs text-on-surface-variant">Cash Var.</p>
                     {shift.cashVariance !== 0 ? (
-                      <p className={cn('font-medium', shift.cashVariance < 0 ? 'text-rose-600' : 'text-emerald-600')}>
+                      <p
+                        className={cn(
+                          'font-medium',
+                          shift.cashVariance < 0 ? 'text-rose-600' : 'text-emerald-600',
+                        )}
+                      >
                         {shift.cashVariance > 0 ? '+' : ''}₹{shift.cashVariance.toLocaleString('en-IN')}
                       </p>
-                    ) : <p className="text-on-surface-variant">—</p>}
+                    ) : (
+                      <p className="text-on-surface-variant">—</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -140,18 +191,36 @@ export default function SalesmanDashboard() {
             <thead className="bg-surface-container-low border-b border-outline-variant">
               <tr>
                 {['Date', 'Litres', 'Revenue', 'Cash Variance', 'Status'].map((h) => (
-                  <th key={h} className="text-left px-5 py-3 text-on-surface-variant font-semibold text-xs uppercase tracking-wider whitespace-nowrap">{h}</th>
+                  <th
+                    key={h}
+                    className="text-left px-5 py-3 text-on-surface-variant font-semibold text-xs uppercase tracking-wider whitespace-nowrap"
+                  >
+                    {h}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {recentShifts.length === 0 ? (
-                <tr><td colSpan={5} className="px-5 py-8 text-center text-on-surface-variant text-sm">No shifts yet</td></tr>
+                <tr>
+                  <td colSpan={5} className="px-5 py-8 text-center text-on-surface-variant text-sm">
+                    No shifts yet
+                  </td>
+                </tr>
               ) : (
                 recentShifts.map((shift, i) => (
-                  <tr key={shift.id} className={cn('border-b border-outline-variant last:border-0', i % 2 ? 'bg-surface-container-low/30' : '')}>
+                  <tr
+                    key={shift.id}
+                    className={cn(
+                      'border-b border-outline-variant last:border-0',
+                      i % 2 ? 'bg-surface-container-low/30' : '',
+                    )}
+                  >
                     <td className="px-5 py-3 text-on-surface-variant whitespace-nowrap">
-                      {new Date(shift.openedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                      {new Date(shift.openedAt).toLocaleDateString('en-IN', {
+                        day: '2-digit',
+                        month: 'short',
+                      })}
                     </td>
                     <td className="px-5 py-3 text-on-surface text-right">
                       {shift.totalLitresSold > 0 ? `${shift.totalLitresSold.toLocaleString('en-IN')} L` : '—'}
@@ -161,13 +230,26 @@ export default function SalesmanDashboard() {
                     </td>
                     <td className="px-5 py-3 text-right">
                       {shift.cashVariance !== 0 ? (
-                        <span className={shift.cashVariance < 0 ? 'text-rose-600 font-medium' : 'text-emerald-600 font-medium'}>
+                        <span
+                          className={
+                            shift.cashVariance < 0
+                              ? 'text-rose-600 font-medium'
+                              : 'text-emerald-600 font-medium'
+                          }
+                        >
                           {shift.cashVariance > 0 ? '+' : ''}₹{shift.cashVariance.toLocaleString('en-IN')}
                         </span>
-                      ) : <span className="text-on-surface-variant">—</span>}
+                      ) : (
+                        <span className="text-on-surface-variant">—</span>
+                      )}
                     </td>
                     <td className="px-5 py-3">
-                      <span className={cn('px-2 py-1 rounded-full text-xs font-semibold capitalize', STATUS_STYLES[shift.status])}>
+                      <span
+                        className={cn(
+                          'px-2 py-1 rounded-full text-xs font-semibold capitalize',
+                          STATUS_STYLES[shift.status],
+                        )}
+                      >
                         {shift.status}
                       </span>
                     </td>
@@ -197,13 +279,27 @@ export default function SalesmanDashboard() {
                 </div>
                 <div className="min-w-0">
                   <p className="text-on-surface font-semibold text-sm truncate">{nozzle.name}</p>
-                  <p className="text-on-surface-variant text-xs">Slot {nozzle.slot} — {FUEL_LABELS[nozzle.fuelType]}</p>
+                  <p className="text-on-surface-variant text-xs">
+                    Slot {nozzle.slot} — {FUEL_LABELS[nozzle.fuelType]}
+                  </p>
                 </div>
               </div>
             </div>
           ))}
         </div>
       </section>
+
+      {openModal === 'open' && currentUser && (
+        <OpenShiftModal
+          users={users}
+          dispenserUnits={dispenserUnits}
+          currentUser={currentUser}
+          onClose={() => setOpenModal(null)}
+        />
+      )}
+      {openModal === 'close' && activeShift && (
+        <CloseShiftModal shift={activeShift} onClose={() => setOpenModal(null)} />
+      )}
     </div>
   )
 }
