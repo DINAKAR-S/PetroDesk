@@ -25,7 +25,16 @@ const NAV_ITEMS: Record<Role, NavItem[]> = {
   ],
 }
 
-export default function Sidebar() {
+interface SidebarProps {
+  /** When true, render in mobile drawer mode (full-screen-height panel, no sticky positioning, includes a close button). */
+  mobile?: boolean
+  /** Called by the mobile drawer's close button. */
+  onClose?: () => void
+  /** Called whenever the user clicks a nav link or logout (used by the drawer to auto-close). */
+  onNavigate?: () => void
+}
+
+export default function Sidebar({ mobile = false, onClose, onNavigate }: SidebarProps) {
   const location = useLocation()
   const navigate = useNavigate()
   const { currentUser, logout } = useAuthStore()
@@ -33,15 +42,35 @@ export default function Sidebar() {
 
   const navItems = NAV_ITEMS[currentUser.role]
 
+  const handleLogout = (): void => {
+    onNavigate?.()
+    logout()
+    navigate('/login')
+  }
+
+  const containerClass = mobile
+    ? 'flex w-72 max-w-[80vw] bg-surface-container-lowest border-r border-outline-variant flex-col h-full'
+    : 'hidden md:flex w-64 bg-surface-container-lowest border-r border-outline-variant flex-col h-screen sticky top-0'
+
   return (
-    <aside className="w-64 bg-surface-container-lowest border-r border-outline-variant flex flex-col h-screen sticky top-0">
+    <aside className={containerClass}>
       <div className="flex items-center gap-3 px-6 py-5 border-b border-outline-variant">
         <div className="size-7 text-secondary-container">
           <svg fill="currentColor" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
             <path d="M42.1739 20.1739L27.8261 5.82609C29.1366 7.13663 28.3989 10.1876 26.2002 13.7654C24.8538 15.9564 22.9595 18.3449 20.6522 20.6522C18.3449 22.9595 15.9564 24.8538 13.7654 26.2002C10.1876 28.3989 7.13663 29.1366 5.82609 27.8261L20.1739 42.1739C21.4845 43.4845 24.5355 42.7467 28.1133 40.548C30.3042 39.2016 32.6927 37.3073 35 35C37.3073 32.6927 39.2016 30.3042 40.548 28.1133C42.7467 24.5355 43.4845 21.4845 42.1739 20.1739Z" />
           </svg>
         </div>
-        <h2 className="text-on-surface text-lg font-bold tracking-tight">PetroDisk</h2>
+        <h2 className="text-on-surface text-lg font-bold tracking-tight flex-1">PetroDisk</h2>
+        {mobile && (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close menu"
+            className="p-1 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors"
+          >
+            <span className="material-symbols-outlined text-[22px]">close</span>
+          </button>
+        )}
       </div>
 
       <div className="px-4 py-3 border-b border-outline-variant">
@@ -63,6 +92,7 @@ export default function Sidebar() {
             <Link
               key={item.path}
               to={item.path}
+              onClick={onNavigate}
               className={cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors',
                 isActive
@@ -81,7 +111,7 @@ export default function Sidebar() {
 
       <div className="p-4 border-t border-outline-variant">
         <button
-          onClick={() => { logout(); navigate('/login') }}
+          onClick={handleLogout}
           className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-on-surface-variant hover:bg-red-50 hover:text-red-600 transition-colors"
         >
           <span className="material-symbols-outlined text-[20px]">logout</span>

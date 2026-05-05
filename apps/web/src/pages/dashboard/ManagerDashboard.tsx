@@ -70,15 +70,15 @@ export default function ManagerDashboard() {
   const teamRows = Array.from(salesmanMap.values())
 
   return (
-    <div className="flex flex-col gap-8">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex bg-surface-container rounded-xl p-1 gap-1">
+    <div className="flex flex-col gap-6 sm:gap-8">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3 -mx-1 px-1 overflow-x-auto">
+        <div className="flex bg-surface-container rounded-xl p-1 gap-1 shrink-0">
           {DATE_FILTERS.map((f) => (
             <button
               key={f.value}
               onClick={() => setDateFilter(f.value)}
               className={cn(
-                'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+                'px-2.5 sm:px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap',
                 dateFilter === f.value
                   ? 'bg-surface-container-lowest text-on-surface font-semibold shadow-sm'
                   : 'text-on-surface-variant hover:text-on-surface',
@@ -88,13 +88,13 @@ export default function ManagerDashboard() {
             </button>
           ))}
         </div>
-        <div className="flex bg-surface-container rounded-xl p-1 gap-1">
+        <div className="flex bg-surface-container rounded-xl p-1 gap-1 shrink-0">
           {(['all', 'open', 'closed', 'flagged'] as const).map((s) => (
             <button
               key={s}
               onClick={() => setStatusFilter(s)}
               className={cn(
-                'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors capitalize',
+                'px-2.5 sm:px-3 py-1.5 rounded-lg text-sm font-medium transition-colors capitalize whitespace-nowrap',
                 statusFilter === s
                   ? 'bg-surface-container-lowest text-on-surface font-semibold shadow-sm'
                   : 'text-on-surface-variant hover:text-on-surface',
@@ -106,31 +106,31 @@ export default function ManagerDashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant shadow-sm">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <div className="bg-surface-container-lowest p-4 sm:p-6 rounded-xl border border-outline-variant shadow-sm">
           <p className="text-on-surface-variant text-sm font-medium">Total Revenue</p>
-          <p className="text-on-surface text-2xl font-bold mt-2">
+          <p className="text-on-surface text-xl sm:text-2xl font-bold mt-2 break-words">
             ₹{totalRevenue.toLocaleString('en-IN')}
           </p>
           <p className="text-on-surface-variant text-xs mt-1">{closedShifts.length} closed shifts</p>
         </div>
-        <div className="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant shadow-sm">
+        <div className="bg-surface-container-lowest p-4 sm:p-6 rounded-xl border border-outline-variant shadow-sm">
           <p className="text-on-surface-variant text-sm font-medium">Litres Sold</p>
-          <p className="text-on-surface text-2xl font-bold mt-2">
+          <p className="text-on-surface text-xl sm:text-2xl font-bold mt-2 break-words">
             {totalLitres.toLocaleString('en-IN')} L
           </p>
           <p className="text-on-surface-variant text-xs mt-1">across {closedShifts.length} shifts</p>
         </div>
-        <div className="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant shadow-sm">
+        <div className="bg-surface-container-lowest p-4 sm:p-6 rounded-xl border border-outline-variant shadow-sm">
           <p className="text-on-surface-variant text-sm font-medium">Shifts Today</p>
-          <p className={cn('text-2xl font-bold mt-2', shiftsToday > 0 ? 'text-blue-600' : 'text-on-surface')}>
+          <p className={cn('text-xl sm:text-2xl font-bold mt-2', shiftsToday > 0 ? 'text-blue-600' : 'text-on-surface')}>
             {shiftsToday}
           </p>
           <p className="text-on-surface-variant text-xs mt-1">opened today</p>
         </div>
-        <div className="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant shadow-sm">
+        <div className="bg-surface-container-lowest p-4 sm:p-6 rounded-xl border border-outline-variant shadow-sm">
           <p className="text-on-surface-variant text-sm font-medium">Flagged</p>
-          <p className={cn('text-2xl font-bold mt-2', flaggedCount > 0 ? 'text-rose-600' : 'text-on-surface')}>
+          <p className={cn('text-xl sm:text-2xl font-bold mt-2', flaggedCount > 0 ? 'text-rose-600' : 'text-on-surface')}>
             {flaggedCount}
           </p>
           <p className="text-on-surface-variant text-xs mt-1">need review</p>
@@ -138,10 +138,57 @@ export default function ManagerDashboard() {
       </div>
 
       <section>
-        <h3 className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider mb-4">
+        <h3 className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider mb-3 sm:mb-4">
           Team Performance
         </h3>
-        <div className="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm overflow-x-auto">
+        {/* Mobile cards */}
+        <div className="flex flex-col gap-3 lg:hidden">
+          {teamRows.length === 0 ? (
+            <div className="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm p-6 text-center text-on-surface-variant text-sm">
+              No data
+            </div>
+          ) : (
+            teamRows.map((row) => {
+              const avgVariance = row.cashVariances.length > 0
+                ? row.cashVariances.reduce((a, b) => a + b, 0) / row.cashVariances.length
+                : 0
+              return (
+                <div key={row.name} className="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm p-4">
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <p className="font-semibold text-on-surface truncate">{row.name}</p>
+                    <span className="text-xs text-on-surface-variant shrink-0">{row.count} shift{row.count === 1 ? '' : 's'}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                    <div>
+                      <p className="text-xs text-on-surface-variant">Litres</p>
+                      <p className="text-on-surface font-medium">{row.litres.toLocaleString('en-IN')} L</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-on-surface-variant">Revenue</p>
+                      <p className="text-on-surface font-medium">₹{row.revenue.toLocaleString('en-IN')}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-on-surface-variant">Avg Cash Var.</p>
+                      <p className={cn('font-medium', avgVariance < 0 ? 'text-rose-600' : avgVariance > 0 ? 'text-emerald-600' : 'text-on-surface-variant')}>
+                        {avgVariance > 0 ? '+' : ''}₹{Math.round(avgVariance).toLocaleString('en-IN')}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-on-surface-variant">Worst DIP%</p>
+                      {row.worstDip > 0 ? (
+                        <p className={cn('font-medium', row.worstDip > 2 ? 'text-red-600' : row.worstDip > 0.5 ? 'text-amber-600' : 'text-emerald-600')}>
+                          {row.worstDip}%
+                        </p>
+                      ) : <p className="text-on-surface-variant">—</p>}
+                    </div>
+                  </div>
+                </div>
+              )
+            })
+          )}
+        </div>
+        {/* Desktop table */}
+        <div className="hidden lg:block bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-surface-container-low border-b border-outline-variant">
               <tr>
@@ -186,92 +233,164 @@ export default function ManagerDashboard() {
       </section>
 
       <section>
-        <h3 className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider mb-4">
+        <h3 className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider mb-3 sm:mb-4">
           Active Shifts ({activeShifts.length})
         </h3>
         {activeShifts.length === 0 ? (
           <p className="text-on-surface-variant text-sm">No active shifts right now.</p>
         ) : (
-          <div className="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-surface-container-low border-b border-outline-variant">
-                <tr>
-                  {['Salesman', 'Opened At', 'Hours Active'].map((h) => (
-                    <th key={h} className="text-left px-5 py-3 text-on-surface-variant font-semibold text-xs uppercase tracking-wider whitespace-nowrap">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {activeShifts.map((shift, i) => (
-                  <tr key={shift.id} className={cn('border-b border-outline-variant last:border-0', i % 2 ? 'bg-surface-container-low/30' : '')}>
-                    <td className="px-5 py-3 font-medium text-on-surface">{shift.salesmanName}</td>
-                    <td className="px-5 py-3 text-on-surface-variant whitespace-nowrap">{formatOpenedAt(shift.openedAt)}</td>
-                    <td className="px-5 py-3 text-blue-600 font-medium">{hoursElapsed(shift.openedAt)}</td>
+          <>
+            {/* Mobile cards */}
+            <div className="flex flex-col gap-3 lg:hidden">
+              {activeShifts.map((shift) => (
+                <div key={shift.id} className="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-semibold text-on-surface truncate">{shift.salesmanName}</p>
+                    <p className="text-blue-600 font-medium text-sm shrink-0">{hoursElapsed(shift.openedAt)}</p>
+                  </div>
+                  <p className="text-xs text-on-surface-variant mt-1">Opened {formatOpenedAt(shift.openedAt)}</p>
+                </div>
+              ))}
+            </div>
+            {/* Desktop table */}
+            <div className="hidden lg:block bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-surface-container-low border-b border-outline-variant">
+                  <tr>
+                    {['Salesman', 'Opened At', 'Hours Active'].map((h) => (
+                      <th key={h} className="text-left px-5 py-3 text-on-surface-variant font-semibold text-xs uppercase tracking-wider whitespace-nowrap">{h}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {activeShifts.map((shift, i) => (
+                    <tr key={shift.id} className={cn('border-b border-outline-variant last:border-0', i % 2 ? 'bg-surface-container-low/30' : '')}>
+                      <td className="px-5 py-3 font-medium text-on-surface">{shift.salesmanName}</td>
+                      <td className="px-5 py-3 text-on-surface-variant whitespace-nowrap">{formatOpenedAt(shift.openedAt)}</td>
+                      <td className="px-5 py-3 text-blue-600 font-medium">{hoursElapsed(shift.openedAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </section>
 
       <section>
-        <h3 className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider mb-4">
+        <h3 className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider mb-3 sm:mb-4">
           Shift Log ({filteredShifts.length})
         </h3>
         {loading ? (
           <p className="text-on-surface-variant text-sm">Loading…</p>
         ) : (
-          <div className="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-surface-container-low border-b border-outline-variant">
-                <tr>
-                  {['Salesman', 'Date', 'Litres', 'Revenue', 'Cash Variance', 'DIP Var%', 'Status'].map((h) => (
-                    <th key={h} className="text-left px-5 py-3 text-on-surface-variant font-semibold text-xs uppercase tracking-wider whitespace-nowrap">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredShifts.length === 0 ? (
-                  <tr><td colSpan={7} className="px-5 py-8 text-center text-on-surface-variant text-sm">No shifts found</td></tr>
-                ) : (
-                  filteredShifts.map((shift, i) => (
-                    <tr key={shift.id} className={cn('border-b border-outline-variant last:border-0', i % 2 ? 'bg-surface-container-low/30' : '')}>
-                      <td className="px-5 py-3 font-medium text-on-surface">{shift.salesmanName}</td>
-                      <td className="px-5 py-3 text-on-surface-variant whitespace-nowrap">
-                        {new Date(shift.openedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
-                      </td>
-                      <td className="px-5 py-3 text-on-surface text-right">
-                        {shift.totalLitresSold > 0 ? `${shift.totalLitresSold.toLocaleString('en-IN')} L` : '—'}
-                      </td>
-                      <td className="px-5 py-3 text-on-surface text-right">
-                        {shift.totalCashCollected > 0 ? `₹${shift.totalCashCollected.toLocaleString('en-IN')}` : '—'}
-                      </td>
-                      <td className="px-5 py-3 text-right">
+          <>
+            {/* Mobile cards */}
+            <div className="flex flex-col gap-3 lg:hidden">
+              {filteredShifts.length === 0 ? (
+                <div className="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm p-6 text-center text-on-surface-variant text-sm">
+                  No shifts found
+                </div>
+              ) : (
+                filteredShifts.map((shift) => (
+                  <div key={shift.id} className="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm p-4">
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-on-surface truncate">{shift.salesmanName}</p>
+                        <p className="text-xs text-on-surface-variant">
+                          {new Date(shift.openedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                        </p>
+                      </div>
+                      <span className={cn('shrink-0 px-2 py-1 rounded-full text-xs font-semibold capitalize', STATUS_STYLES[shift.status])}>
+                        {shift.status}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm mt-3">
+                      <div>
+                        <p className="text-xs text-on-surface-variant">Litres</p>
+                        <p className="text-on-surface font-medium">
+                          {shift.totalLitresSold > 0 ? `${shift.totalLitresSold.toLocaleString('en-IN')} L` : '—'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-on-surface-variant">Revenue</p>
+                        <p className="text-on-surface font-medium">
+                          {shift.totalCashCollected > 0 ? `₹${shift.totalCashCollected.toLocaleString('en-IN')}` : '—'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-on-surface-variant">Cash Var.</p>
                         {shift.cashVariance !== 0 ? (
-                          <span className={shift.cashVariance < 0 ? 'text-rose-600 font-medium' : 'text-emerald-600 font-medium'}>
+                          <p className={cn('font-medium', shift.cashVariance < 0 ? 'text-rose-600' : 'text-emerald-600')}>
                             {shift.cashVariance > 0 ? '+' : ''}₹{shift.cashVariance.toLocaleString('en-IN')}
-                          </span>
-                        ) : <span className="text-on-surface-variant">—</span>}
-                      </td>
-                      <td className="px-5 py-3 text-right">
+                          </p>
+                        ) : <p className="text-on-surface-variant">—</p>}
+                      </div>
+                      <div>
+                        <p className="text-xs text-on-surface-variant">DIP Var%</p>
                         {shift.dipVariancePct > 0 ? (
-                          <span className={cn('font-medium', shift.dipVariancePct > 2 ? 'text-red-600' : shift.dipVariancePct > 0.5 ? 'text-amber-600' : 'text-emerald-600')}>
+                          <p className={cn('font-medium', shift.dipVariancePct > 2 ? 'text-red-600' : shift.dipVariancePct > 0.5 ? 'text-amber-600' : 'text-emerald-600')}>
                             {shift.dipVariancePct}%
+                          </p>
+                        ) : <p className="text-on-surface-variant">—</p>}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+            {/* Desktop table */}
+            <div className="hidden lg:block bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-surface-container-low border-b border-outline-variant">
+                  <tr>
+                    {['Salesman', 'Date', 'Litres', 'Revenue', 'Cash Variance', 'DIP Var%', 'Status'].map((h) => (
+                      <th key={h} className="text-left px-5 py-3 text-on-surface-variant font-semibold text-xs uppercase tracking-wider whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredShifts.length === 0 ? (
+                    <tr><td colSpan={7} className="px-5 py-8 text-center text-on-surface-variant text-sm">No shifts found</td></tr>
+                  ) : (
+                    filteredShifts.map((shift, i) => (
+                      <tr key={shift.id} className={cn('border-b border-outline-variant last:border-0', i % 2 ? 'bg-surface-container-low/30' : '')}>
+                        <td className="px-5 py-3 font-medium text-on-surface">{shift.salesmanName}</td>
+                        <td className="px-5 py-3 text-on-surface-variant whitespace-nowrap">
+                          {new Date(shift.openedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                        </td>
+                        <td className="px-5 py-3 text-on-surface text-right">
+                          {shift.totalLitresSold > 0 ? `${shift.totalLitresSold.toLocaleString('en-IN')} L` : '—'}
+                        </td>
+                        <td className="px-5 py-3 text-on-surface text-right">
+                          {shift.totalCashCollected > 0 ? `₹${shift.totalCashCollected.toLocaleString('en-IN')}` : '—'}
+                        </td>
+                        <td className="px-5 py-3 text-right">
+                          {shift.cashVariance !== 0 ? (
+                            <span className={shift.cashVariance < 0 ? 'text-rose-600 font-medium' : 'text-emerald-600 font-medium'}>
+                              {shift.cashVariance > 0 ? '+' : ''}₹{shift.cashVariance.toLocaleString('en-IN')}
+                            </span>
+                          ) : <span className="text-on-surface-variant">—</span>}
+                        </td>
+                        <td className="px-5 py-3 text-right">
+                          {shift.dipVariancePct > 0 ? (
+                            <span className={cn('font-medium', shift.dipVariancePct > 2 ? 'text-red-600' : shift.dipVariancePct > 0.5 ? 'text-amber-600' : 'text-emerald-600')}>
+                              {shift.dipVariancePct}%
+                            </span>
+                          ) : <span className="text-on-surface-variant">—</span>}
+                        </td>
+                        <td className="px-5 py-3">
+                          <span className={cn('px-2 py-1 rounded-full text-xs font-semibold capitalize', STATUS_STYLES[shift.status])}>
+                            {shift.status}
                           </span>
-                        ) : <span className="text-on-surface-variant">—</span>}
-                      </td>
-                      <td className="px-5 py-3">
-                        <span className={cn('px-2 py-1 rounded-full text-xs font-semibold capitalize', STATUS_STYLES[shift.status])}>
-                          {shift.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </section>
     </div>

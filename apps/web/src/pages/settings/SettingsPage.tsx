@@ -19,15 +19,15 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 /* ── Reusable modal wrapper ── */
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-on-surface/40">
-      <div className="bg-surface-container-lowest rounded-xl shadow-xl w-full max-w-md border border-outline-variant">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant">
+    <div className="fixed inset-0 z-50 flex items-stretch justify-center sm:items-center sm:p-4 bg-on-surface/40">
+      <div className="bg-surface-container-lowest shadow-xl w-full h-full overflow-y-auto sm:h-auto sm:max-h-[90vh] sm:max-w-md sm:rounded-xl sm:border sm:border-outline-variant flex flex-col">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-outline-variant sticky top-0 bg-surface-container-lowest z-10">
           <h3 className="text-on-surface font-semibold text-base">{title}</h3>
-          <button onClick={onClose} className="text-on-surface-variant hover:text-on-surface transition-colors">
+          <button onClick={onClose} className="text-on-surface-variant hover:text-on-surface transition-colors p-1 -mr-1">
             <span className="material-symbols-outlined text-[20px]">close</span>
           </button>
         </div>
-        <div className="px-6 py-5">{children}</div>
+        <div className="px-4 sm:px-6 py-5 flex-1">{children}</div>
       </div>
     </div>
   )
@@ -133,11 +133,11 @@ function TanksTab() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-4">
         <p className="text-on-surface-variant text-sm">{tanks.length} tank(s) configured</p>
         <button
           onClick={openAdd}
-          className="flex items-center gap-2 px-4 py-2 bg-secondary-container text-white rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity"
+          className="flex items-center justify-center gap-2 px-4 py-2.5 bg-secondary-container text-white rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity w-full sm:w-auto"
         >
           <span className="material-symbols-outlined text-[16px]">add</span>
           Add Tank
@@ -148,21 +148,21 @@ function TanksTab() {
         {tanks.map((tank) => (
           <div
             key={tank.id}
-            className="bg-surface-container-lowest rounded-xl border border-outline-variant p-4 flex items-center justify-between"
+            className="bg-surface-container-lowest rounded-xl border border-outline-variant p-4 flex items-center justify-between gap-3"
           >
-            <div className="flex items-center gap-3">
-              <div className="size-10 rounded-full bg-primary/10 flex items-center justify-center">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <div className="size-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
                 <span className="material-symbols-outlined text-[18px] text-primary">water_drop</span>
               </div>
-              <div>
-                <p className="text-on-surface font-semibold text-sm">{tank.name}</p>
-                <p className="text-on-surface-variant text-xs">
-                  {tank.fuelType} · {tank.capacityL.toLocaleString('en-IN')} L capacity ·{' '}
-                  {tank.currentStockL.toLocaleString('en-IN')} L current
+              <div className="min-w-0 flex-1">
+                <p className="text-on-surface font-semibold text-sm truncate">{tank.name}</p>
+                <p className="text-on-surface-variant text-xs break-words">
+                  {tank.fuelType} · {tank.capacityL.toLocaleString('en-IN')} L cap ·{' '}
+                  {tank.currentStockL.toLocaleString('en-IN')} L now
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
               <button
                 onClick={() => openEdit(tank)}
                 className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors"
@@ -223,18 +223,18 @@ function TanksTab() {
                 className={INPUT_CLS}
               />
             </Field>
-            <div className="flex gap-3 pt-1">
-              <button
-                onClick={handleSave}
-                className="flex-1 py-2.5 bg-secondary-container text-white rounded-lg text-sm font-semibold hover:opacity-90"
-              >
-                {modal.mode === 'add' ? 'Add Tank' : 'Save Changes'}
-              </button>
+            <div className="flex flex-col-reverse sm:flex-row gap-3 pt-1">
               <button
                 onClick={() => setModal(null)}
                 className="flex-1 py-2.5 border border-outline-variant rounded-lg text-sm font-semibold text-on-surface-variant hover:bg-surface-container"
               >
                 Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                className="flex-1 py-2.5 bg-secondary-container text-white rounded-lg text-sm font-semibold hover:opacity-90"
+              >
+                {modal.mode === 'add' ? 'Add Tank' : 'Save Changes'}
               </button>
             </div>
           </div>
@@ -281,11 +281,11 @@ function NozzlesTab() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-4">
         <p className="text-on-surface-variant text-sm">{nozzles.length} nozzle(s) configured</p>
         <button
           onClick={openAdd}
-          className="flex items-center gap-2 px-4 py-2 bg-secondary-container text-white rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity"
+          className="flex items-center justify-center gap-2 px-4 py-2.5 bg-secondary-container text-white rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity w-full sm:w-auto"
         >
           <span className="material-symbols-outlined text-[16px]">add</span>
           Add Nozzle
@@ -296,23 +296,23 @@ function NozzlesTab() {
         {nozzles.map((nozzle) => (
           <div
             key={nozzle.id}
-            className="bg-surface-container-lowest rounded-xl border border-outline-variant p-4 flex items-center justify-between"
+            className="bg-surface-container-lowest rounded-xl border border-outline-variant p-4 flex items-center justify-between gap-3"
           >
-            <div className="flex items-center gap-3">
-              <div className="size-10 rounded-full bg-secondary-container/10 flex items-center justify-center">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <div className="size-10 rounded-full bg-secondary-container/10 flex items-center justify-center flex-shrink-0">
                 <span className="material-symbols-outlined text-[18px] text-secondary-container">
                   local_gas_station
                 </span>
               </div>
-              <div>
-                <p className="text-on-surface font-semibold text-sm">{nozzle.name}</p>
-                <p className="text-on-surface-variant text-xs">
+              <div className="min-w-0 flex-1">
+                <p className="text-on-surface font-semibold text-sm truncate">{nozzle.name}</p>
+                <p className="text-on-surface-variant text-xs break-words">
                   {nozzle.fuelType} · {getTankName(nozzle.tankId)} ·{' '}
                   Meter: {nozzle.currentMeterReading.toLocaleString('en-IN')} L
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
               <button
                 onClick={() => openEdit(nozzle)}
                 className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors"
@@ -381,18 +381,18 @@ function NozzlesTab() {
                 className={INPUT_CLS}
               />
             </Field>
-            <div className="flex gap-3 pt-1">
-              <button
-                onClick={handleSave}
-                className="flex-1 py-2.5 bg-secondary-container text-white rounded-lg text-sm font-semibold hover:opacity-90"
-              >
-                {modal.mode === 'add' ? 'Add Nozzle' : 'Save Changes'}
-              </button>
+            <div className="flex flex-col-reverse sm:flex-row gap-3 pt-1">
               <button
                 onClick={() => setModal(null)}
                 className="flex-1 py-2.5 border border-outline-variant rounded-lg text-sm font-semibold text-on-surface-variant hover:bg-surface-container"
               >
                 Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                className="flex-1 py-2.5 bg-secondary-container text-white rounded-lg text-sm font-semibold hover:opacity-90"
+              >
+                {modal.mode === 'add' ? 'Add Nozzle' : 'Save Changes'}
               </button>
             </div>
           </div>
@@ -447,11 +447,11 @@ function StaffTab() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-4">
         <p className="text-on-surface-variant text-sm">{users.length} staff member(s)</p>
         <button
           onClick={openAdd}
-          className="flex items-center gap-2 px-4 py-2 bg-secondary-container text-white rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity"
+          className="flex items-center justify-center gap-2 px-4 py-2.5 bg-secondary-container text-white rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity w-full sm:w-auto"
         >
           <span className="material-symbols-outlined text-[16px]">add</span>
           Add User
@@ -462,15 +462,15 @@ function StaffTab() {
         {users.map((user) => (
           <div
             key={user.id}
-            className="bg-surface-container-lowest rounded-xl border border-outline-variant p-4 flex items-center justify-between"
+            className="bg-surface-container-lowest rounded-xl border border-outline-variant p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
           >
-            <div className="flex items-center gap-3">
-              <div className="size-10 rounded-full bg-primary flex items-center justify-center text-on-primary text-sm font-bold">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <div className="size-10 rounded-full bg-primary flex items-center justify-center text-on-primary text-sm font-bold flex-shrink-0">
                 {user.avatarInitials}
               </div>
-              <div>
-                <p className="text-on-surface font-semibold text-sm">{user.name}</p>
-                <div className="flex items-center gap-2 mt-0.5">
+              <div className="min-w-0 flex-1">
+                <p className="text-on-surface font-semibold text-sm truncate">{user.name}</p>
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                   <span
                     className={cn(
                       'px-2 py-0.5 rounded-full text-xs font-semibold capitalize',
@@ -484,10 +484,10 @@ function StaffTab() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-shrink-0 border-t border-outline-variant pt-3 sm:border-t-0 sm:pt-0">
               <button
                 onClick={() => handleLoginAs(user)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-primary border border-primary/30 rounded-lg hover:bg-primary/10 transition-colors"
+                className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-primary border border-primary/30 rounded-lg hover:bg-primary/10 transition-colors flex-1 sm:flex-initial"
               >
                 <span className="material-symbols-outlined text-[14px]">switch_account</span>
                 Login as
@@ -550,18 +550,18 @@ function StaffTab() {
                 />
               </div>
             </Field>
-            <div className="flex gap-3 pt-1">
-              <button
-                onClick={handleSave}
-                className="flex-1 py-2.5 bg-secondary-container text-white rounded-lg text-sm font-semibold hover:opacity-90"
-              >
-                {modal.mode === 'add' ? 'Add Member' : 'Save Changes'}
-              </button>
+            <div className="flex flex-col-reverse sm:flex-row gap-3 pt-1">
               <button
                 onClick={() => setModal(null)}
                 className="flex-1 py-2.5 border border-outline-variant rounded-lg text-sm font-semibold text-on-surface-variant hover:bg-surface-container"
               >
                 Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                className="flex-1 py-2.5 bg-secondary-container text-white rounded-lg text-sm font-semibold hover:opacity-90"
+              >
+                {modal.mode === 'add' ? 'Add Member' : 'Save Changes'}
               </button>
             </div>
           </div>
@@ -602,22 +602,22 @@ function FuelPricesTab() {
     <div className="max-w-lg flex flex-col gap-4">
       <p className="text-on-surface-variant text-sm">Update the selling price per litre for each fuel type. Changes apply to all new shift calculations.</p>
       {fuelPrices.map((p) => (
-        <div key={p.id} className="bg-surface-container-lowest rounded-xl border border-outline-variant p-4 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="size-10 rounded-full bg-primary/10 flex items-center justify-center">
+        <div key={p.id} className="bg-surface-container-lowest rounded-xl border border-outline-variant p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className="size-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
               <span className="material-symbols-outlined text-[18px] text-primary">local_offer</span>
             </div>
-            <div>
-              <p className="text-on-surface font-semibold text-sm">{FUEL_LABELS[p.fuelType as FuelType]}</p>
+            <div className="min-w-0 flex-1">
+              <p className="text-on-surface font-semibold text-sm truncate">{FUEL_LABELS[p.fuelType as FuelType]}</p>
               {editing[p.id] === undefined && (
                 <p className="text-on-surface-variant text-xs">₹{p.pricePerLitre.toFixed(2)} / litre</p>
               )}
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0 w-full sm:w-auto">
             {editing[p.id] !== undefined ? (
               <>
-                <div className="relative">
+                <div className="relative flex-1 sm:flex-initial">
                   <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 text-on-surface-variant text-sm pointer-events-none">₹</span>
                   <input
                     type="number"
@@ -625,14 +625,14 @@ function FuelPricesTab() {
                     step="0.01"
                     value={editing[p.id]}
                     onChange={(e) => setEditing((prev) => ({ ...prev, [p.id]: e.target.value }))}
-                    className="w-28 pl-6 pr-2 py-1.5 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    className="w-full sm:w-28 pl-6 pr-2 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                     autoFocus
                   />
                 </div>
-                <button onClick={() => handleSave(p.id)} className="px-3 py-1.5 rounded-lg bg-primary text-on-primary text-xs font-semibold hover:opacity-90 transition-opacity">
+                <button onClick={() => handleSave(p.id)} className="px-3 py-2 rounded-lg bg-primary text-on-primary text-xs font-semibold hover:opacity-90 transition-opacity">
                   Save
                 </button>
-                <button onClick={() => handleCancel(p.id)} className="px-3 py-1.5 rounded-lg border border-outline-variant text-on-surface-variant text-xs font-medium hover:bg-surface-container transition-colors">
+                <button onClick={() => handleCancel(p.id)} className="px-3 py-2 rounded-lg border border-outline-variant text-on-surface-variant text-xs font-medium hover:bg-surface-container transition-colors">
                   Cancel
                 </button>
               </>
@@ -641,7 +641,7 @@ function FuelPricesTab() {
                 {saved[p.id] && <span className="text-emerald-600 text-xs font-medium">✓ Saved</span>}
                 <button
                   onClick={() => startEdit(p.id, p.pricePerLitre)}
-                  className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors"
+                  className="ml-auto sm:ml-0 p-2 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors"
                 >
                   <span className="material-symbols-outlined text-[18px]">edit</span>
                 </button>
@@ -660,21 +660,21 @@ export default function SettingsPage() {
 
   return (
     <div className="max-w-3xl">
-      {/* Tabs */}
-      <div className="flex gap-1 bg-surface-container p-1 rounded-xl mb-6">
+      {/* Tabs — horizontal scroll on mobile, no wrap */}
+      <div className="flex gap-1 bg-surface-container p-1 rounded-xl mb-6 overflow-x-auto whitespace-nowrap [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {TABS.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={cn(
-              'flex items-center gap-2 flex-1 justify-center py-2 px-3 rounded-lg text-sm font-medium transition-colors',
+              'flex items-center gap-2 flex-shrink-0 sm:flex-1 justify-center py-2 px-3 rounded-lg text-sm font-medium transition-colors',
               activeTab === tab.id
                 ? 'bg-surface-container-lowest text-on-surface shadow-sm font-semibold'
                 : 'text-on-surface-variant hover:text-on-surface',
             )}
           >
             <span className="material-symbols-outlined text-[16px]">{tab.icon}</span>
-            <span className="hidden sm:inline">{tab.label}</span>
+            <span>{tab.label}</span>
           </button>
         ))}
       </div>

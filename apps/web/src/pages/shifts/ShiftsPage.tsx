@@ -48,21 +48,21 @@ function OpenShiftModal({ users, currentUser, onClose, onSubmit }: OpenShiftModa
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-surface-container-lowest rounded-2xl shadow-xl p-6 w-full max-w-lg mx-4" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/40 flex sm:items-center sm:justify-center z-50" onClick={onClose}>
+      <div className="bg-surface-container-lowest w-full h-full sm:h-auto sm:max-w-lg sm:mx-4 sm:rounded-2xl shadow-xl p-4 sm:p-6 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-on-surface text-lg font-semibold mb-5">Open New Shift</h2>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <label className="text-on-surface-variant text-sm font-medium">Salesman</label>
             {isSalesman ? (
-              <div className="px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container text-on-surface text-sm">
+              <div className="w-full px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container text-on-surface text-sm">
                 {currentUser.name}
               </div>
             ) : (
               <select
                 value={selectedId}
                 onChange={(e) => setSelectedId(e.target.value)}
-                className="px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                className="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                 required
               >
                 {salesmen.length === 0 ? (
@@ -75,11 +75,11 @@ function OpenShiftModal({ users, currentUser, onClose, onSubmit }: OpenShiftModa
               </select>
             )}
           </div>
-          <div className="flex justify-end gap-3 mt-2">
-            <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-on-surface-variant bg-surface-container hover:bg-surface-container-high transition-colors">
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 mt-2">
+            <button type="button" onClick={onClose} className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-xl text-sm font-medium text-on-surface-variant bg-surface-container hover:bg-surface-container-high transition-colors">
               Cancel
             </button>
-            <button type="submit" disabled={submitting || !selectedId} className="px-4 py-2 rounded-xl text-sm font-medium bg-primary text-on-primary hover:opacity-90 transition-opacity disabled:opacity-60">
+            <button type="submit" disabled={submitting || !selectedId} className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-xl text-sm font-medium bg-primary text-on-primary hover:opacity-90 transition-opacity disabled:opacity-60">
               {submitting ? 'Opening…' : 'Open Shift'}
             </button>
           </div>
@@ -136,14 +136,14 @@ function CloseShiftModal({ shift, fuelPrices, onClose, onSubmit }: CloseShiftMod
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-surface-container-lowest rounded-2xl shadow-xl p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/40 flex sm:items-center sm:justify-center z-50" onClick={onClose}>
+      <div className="bg-surface-container-lowest w-full h-full sm:h-auto sm:max-w-lg sm:mx-4 sm:rounded-2xl sm:max-h-[90vh] shadow-xl p-4 sm:p-6 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-on-surface text-lg font-semibold mb-1">Close Shift</h2>
         <p className="text-on-surface-variant text-sm mb-5">{shift.salesmanName}</p>
         <form onSubmit={handleSubmit} className="flex flex-col gap-5">
           <section className="flex flex-col gap-3">
             <h3 className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider">Meter Readings</h3>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[
                 { label: 'Petrol (MS) Closing', val: msClosing, set: setMsClosing },
                 { label: 'MS Opening', val: msOpening, set: setMsOpening },
@@ -153,15 +153,15 @@ function CloseShiftModal({ shift, fuelPrices, onClose, onSubmit }: CloseShiftMod
                 <div key={label} className="flex flex-col gap-1.5">
                   <label className="text-on-surface-variant text-sm font-medium">{label}</label>
                   <input
-                    type="number" min="0" step="0.01"
+                    type="number" min="0" step="0.01" inputMode="decimal"
                     value={val} onChange={(e) => setter(e.target.value)}
                     placeholder="Reading"
-                    className="px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    className="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                   />
                 </div>
               ))}
             </div>
-            <div className="px-3 py-2.5 rounded-xl bg-surface-container text-sm text-on-surface-variant">
+            <div className="px-3 py-2.5 rounded-xl bg-surface-container text-sm text-on-surface-variant break-words">
               MS: <span className="text-on-surface font-medium">{msLitres.toLocaleString('en-IN')} L</span>{' '}
               | HSD: <span className="text-on-surface font-medium">{hsdLitres.toLocaleString('en-IN')} L</span>{' '}
               | Total: <span className="text-on-surface font-medium">{totalLitres.toLocaleString('en-IN')} L</span>
@@ -172,13 +172,13 @@ function CloseShiftModal({ shift, fuelPrices, onClose, onSubmit }: CloseShiftMod
             <div className="flex flex-col gap-1.5">
               <label className="text-on-surface-variant text-sm font-medium">Actual Cash Collected ₹</label>
               <input
-                type="number" min="0" step="0.01"
+                type="number" min="0" step="0.01" inputMode="decimal"
                 value={cashCollected} onChange={(e) => setCashCollected(e.target.value)}
                 placeholder="Enter amount"
-                className="px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                className="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
             </div>
-            <div className="px-3 py-2.5 rounded-xl bg-surface-container text-sm flex flex-col gap-1">
+            <div className="px-3 py-2.5 rounded-xl bg-surface-container text-sm flex flex-col gap-1 break-words">
               <span className="text-on-surface-variant">Expected: <span className="text-on-surface font-medium">₹{expectedCash.toLocaleString('en-IN')}</span></span>
               {cashCollected !== '' && (
                 <span className={cn('font-medium', cashVariance >= 0 ? 'text-emerald-600' : 'text-rose-600')}>
@@ -192,16 +192,16 @@ function CloseShiftModal({ shift, fuelPrices, onClose, onSubmit }: CloseShiftMod
             <div className="flex flex-col gap-1.5">
               <label className="text-on-surface-variant text-sm font-medium">DIP Variance %</label>
               <input
-                type="number" min="0" step="0.01"
+                type="number" min="0" step="0.01" inputMode="decimal"
                 value={dipVariancePct} onChange={(e) => setDipVariancePct(e.target.value)}
                 placeholder="0"
-                className="px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                className="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
             </div>
           </section>
-          <div className="flex justify-end gap-3 mt-1">
-            <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-on-surface-variant bg-surface-container hover:bg-surface-container-high transition-colors">Cancel</button>
-            <button type="submit" disabled={submitting} className="px-4 py-2 rounded-xl text-sm font-medium bg-primary text-on-primary hover:opacity-90 transition-opacity disabled:opacity-60">
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 mt-1">
+            <button type="button" onClick={onClose} className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-xl text-sm font-medium text-on-surface-variant bg-surface-container hover:bg-surface-container-high transition-colors">Cancel</button>
+            <button type="submit" disabled={submitting} className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-xl text-sm font-medium bg-primary text-on-primary hover:opacity-90 transition-opacity disabled:opacity-60">
               {submitting ? 'Closing…' : 'Close Shift'}
             </button>
           </div>
@@ -255,49 +255,49 @@ function EditShiftModal({ shift, fuelPrices, onClose, onSubmit }: EditShiftModal
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-surface-container-lowest rounded-2xl shadow-xl p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/40 flex sm:items-center sm:justify-center z-50" onClick={onClose}>
+      <div className="bg-surface-container-lowest w-full h-full sm:h-auto sm:max-w-lg sm:mx-4 sm:rounded-2xl sm:max-h-[90vh] shadow-xl p-4 sm:p-6 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-on-surface text-lg font-semibold mb-1">Edit Shift</h2>
         <p className="text-on-surface-variant text-sm mb-5">{shift.salesmanName} · {new Date(shift.openedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</p>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <label className="text-on-surface-variant text-sm font-medium">MS Litres Sold</label>
-              <input type="number" min="0" step="0.01" value={msLitres} onChange={(e) => setMsLitres(e.target.value)}
-                className="px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+              <input type="number" min="0" step="0.01" inputMode="decimal" value={msLitres} onChange={(e) => setMsLitres(e.target.value)}
+                className="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-on-surface-variant text-sm font-medium">HSD Litres Sold</label>
-              <input type="number" min="0" step="0.01" value={hsdLitres} onChange={(e) => setHsdLitres(e.target.value)}
-                className="px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+              <input type="number" min="0" step="0.01" inputMode="decimal" value={hsdLitres} onChange={(e) => setHsdLitres(e.target.value)}
+                className="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
             </div>
           </div>
-          <div className="px-3 py-2.5 rounded-xl bg-surface-container text-sm text-on-surface-variant">
-            Expected Cash: <span className="text-on-surface font-medium">₹{expectedCash.toLocaleString('en-IN')}</span>
+          <div className="px-3 py-2.5 rounded-xl bg-surface-container text-sm text-on-surface-variant flex flex-col sm:flex-row sm:flex-wrap gap-1 sm:gap-3 break-words">
+            <span>Expected Cash: <span className="text-on-surface font-medium">₹{expectedCash.toLocaleString('en-IN')}</span></span>
             {cashCollected !== '' && (
-              <span className={cn('ml-3 font-medium', cashVariance >= 0 ? 'text-emerald-600' : 'text-rose-600')}>
+              <span className={cn('font-medium', cashVariance >= 0 ? 'text-emerald-600' : 'text-rose-600')}>
                 Variance: {cashVariance >= 0 ? '+' : ''}₹{cashVariance.toLocaleString('en-IN')}
               </span>
             )}
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-on-surface-variant text-sm font-medium">Actual Cash Collected ₹</label>
-            <input type="number" min="0" step="0.01" value={cashCollected} onChange={(e) => setCashCollected(e.target.value)}
-              className="px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+            <input type="number" min="0" step="0.01" inputMode="decimal" value={cashCollected} onChange={(e) => setCashCollected(e.target.value)}
+              className="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-on-surface-variant text-sm font-medium">DIP Variance %</label>
-            <input type="number" min="0" step="0.01" value={dipVariancePct} onChange={(e) => setDipVariancePct(e.target.value)}
-              className="px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+            <input type="number" min="0" step="0.01" inputMode="decimal" value={dipVariancePct} onChange={(e) => setDipVariancePct(e.target.value)}
+              className="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-on-surface-variant text-sm font-medium">Notes (optional)</label>
             <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)}
-              className="px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none" />
+              className="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none" />
           </div>
-          <div className="flex justify-end gap-3 mt-1">
-            <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-on-surface-variant bg-surface-container hover:bg-surface-container-high transition-colors">Cancel</button>
-            <button type="submit" disabled={submitting} className="px-4 py-2 rounded-xl text-sm font-medium bg-primary text-on-primary hover:opacity-90 transition-opacity disabled:opacity-60">
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 mt-1">
+            <button type="button" onClick={onClose} className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-xl text-sm font-medium text-on-surface-variant bg-surface-container hover:bg-surface-container-high transition-colors">Cancel</button>
+            <button type="submit" disabled={submitting} className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-xl text-sm font-medium bg-primary text-on-primary hover:opacity-90 transition-opacity disabled:opacity-60">
               {submitting ? 'Saving…' : 'Save Changes'}
             </button>
           </div>
@@ -335,10 +335,10 @@ export default function ShiftsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+    <div className="flex flex-col gap-4 sm:gap-6">
+      <div className="flex flex-wrap items-start justify-between gap-3 sm:gap-4">
         <div className="flex flex-col gap-0.5">
-          <h1 className="text-on-surface text-2xl font-bold">Shifts</h1>
+          <h1 className="text-on-surface text-xl sm:text-2xl font-bold">Shifts</h1>
           <p className="text-on-surface-variant text-sm">
             {displayedShifts.length} shift{displayedShifts.length !== 1 ? 's' : ''}
           </p>
@@ -351,14 +351,14 @@ export default function ShiftsPage() {
         </button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex bg-surface-container rounded-xl p-1 gap-1">
+      <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-3">
+        <div className="flex bg-surface-container rounded-xl p-1 gap-1 overflow-x-auto">
           {DATE_FILTERS.map((f) => (
             <button
               key={f.value}
               onClick={() => setDateFilter(f.value)}
               className={cn(
-                'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+                'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap',
                 dateFilter === f.value
                   ? 'bg-surface-container-lowest text-on-surface font-semibold shadow-sm'
                   : 'text-on-surface-variant hover:text-on-surface',
@@ -368,13 +368,13 @@ export default function ShiftsPage() {
             </button>
           ))}
         </div>
-        <div className="flex bg-surface-container rounded-xl p-1 gap-1">
+        <div className="flex bg-surface-container rounded-xl p-1 gap-1 overflow-x-auto">
           {(['all', 'open', 'closed', 'flagged'] as const).map((s) => (
             <button
               key={s}
               onClick={() => setStatusFilter(s)}
               className={cn(
-                'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors capitalize',
+                'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors capitalize whitespace-nowrap',
                 statusFilter === s
                   ? 'bg-surface-container-lowest text-on-surface font-semibold shadow-sm'
                   : 'text-on-surface-variant hover:text-on-surface',
@@ -389,84 +389,164 @@ export default function ShiftsPage() {
       {loading ? (
         <p className="text-on-surface-variant text-sm">Loading…</p>
       ) : (
-        <div className="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-surface-container-low border-b border-outline-variant">
-              <tr>
-                {['Salesman', 'Date', 'Litres', 'Revenue', 'Cash Variance', 'DIP Var%', 'Status', 'Actions'].map((h) => (
-                  <th key={h} className="text-left px-5 py-3 text-on-surface-variant font-semibold text-xs uppercase tracking-wider whitespace-nowrap">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {displayedShifts.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="px-5 py-8 text-center text-on-surface-variant text-sm">No shifts found</td>
-                </tr>
-              ) : (
-                displayedShifts.map((shift, i) => (
-                  <tr key={shift.id} className={cn('border-b border-outline-variant last:border-0', i % 2 ? 'bg-surface-container-low/30' : '')}>
-                    <td className="px-5 py-3 font-medium text-on-surface whitespace-nowrap">{shift.salesmanName}</td>
-                    <td className="px-5 py-3 text-on-surface-variant whitespace-nowrap">
-                      {new Date(shift.openedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
-                    </td>
-                    <td className="px-5 py-3 text-on-surface text-right whitespace-nowrap">
-                      {shift.totalLitresSold > 0 ? `${shift.totalLitresSold.toLocaleString('en-IN')} L` : '—'}
-                    </td>
-                    <td className="px-5 py-3 text-on-surface text-right whitespace-nowrap">
-                      {shift.totalCashCollected > 0 ? `₹${shift.totalCashCollected.toLocaleString('en-IN')}` : '—'}
-                    </td>
-                    <td className="px-5 py-3 text-right whitespace-nowrap">
+        <>
+          {/* Mobile: stacked cards */}
+          <div className="md:hidden flex flex-col gap-3">
+            {displayedShifts.length === 0 ? (
+              <div className="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm p-6 text-center text-on-surface-variant text-sm">
+                No shifts found
+              </div>
+            ) : (
+              displayedShifts.map((shift) => (
+                <div key={shift.id} className="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm p-4 flex flex-col gap-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium text-on-surface truncate">{shift.salesmanName}</div>
+                      <div className="text-on-surface-variant text-xs">
+                        {new Date(shift.openedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </div>
+                    </div>
+                    <span className={cn('shrink-0 px-2 py-1 rounded-full text-xs font-semibold capitalize', STATUS_STYLES[shift.status] ?? 'bg-gray-100 text-gray-500')}>
+                      {shift.status}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-on-surface-variant uppercase tracking-wider">Litres</span>
+                      <span className="text-on-surface font-medium break-words">
+                        {shift.totalLitresSold > 0 ? `${shift.totalLitresSold.toLocaleString('en-IN')} L` : '—'}
+                      </span>
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-on-surface-variant uppercase tracking-wider">Revenue</span>
+                      <span className="text-on-surface font-medium break-words">
+                        {shift.totalCashCollected > 0 ? `₹${shift.totalCashCollected.toLocaleString('en-IN')}` : '—'}
+                      </span>
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-on-surface-variant uppercase tracking-wider">Cash Var.</span>
                       {shift.cashVariance !== 0 ? (
-                        <span className={cn('font-medium', shift.cashVariance < 0 ? 'text-rose-600' : 'text-emerald-600')}>
+                        <span className={cn('font-medium break-words', shift.cashVariance < 0 ? 'text-rose-600' : 'text-emerald-600')}>
                           {shift.cashVariance > 0 ? '+' : ''}₹{shift.cashVariance.toLocaleString('en-IN')}
                         </span>
                       ) : <span className="text-on-surface-variant">—</span>}
-                    </td>
-                    <td className="px-5 py-3 text-right whitespace-nowrap">
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-on-surface-variant uppercase tracking-wider">DIP Var.</span>
                       {shift.dipVariancePct > 0 ? (
                         <span className={cn('font-medium', shift.dipVariancePct > 2 ? 'text-red-600' : shift.dipVariancePct > 0.5 ? 'text-amber-600' : 'text-emerald-600')}>
                           {shift.dipVariancePct}%
                         </span>
                       ) : <span className="text-on-surface-variant">—</span>}
-                    </td>
-                    <td className="px-5 py-3 whitespace-nowrap">
-                      <span className={cn('px-2 py-1 rounded-full text-xs font-semibold capitalize', STATUS_STYLES[shift.status] ?? 'bg-gray-100 text-gray-500')}>
-                        {shift.status}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 whitespace-nowrap">
-                      <div className="flex items-center gap-2">
-                        {shift.status === 'open' && (
-                          <button onClick={() => setShiftToClose(shift)} className="px-3 py-1 rounded-lg text-xs font-medium border border-blue-300 text-blue-700 hover:bg-blue-50 transition-colors">
-                            Close
-                          </button>
-                        )}
-                        {shift.status !== 'open' && (
-                          <button onClick={() => setShiftToEdit(shift)} className="px-3 py-1 rounded-lg text-xs font-medium border border-outline-variant text-on-surface-variant hover:bg-surface-container transition-colors">
-                            Edit
-                          </button>
-                        )}
-                        {isOwnerOrManager && shift.status === 'open' && (
-                          <button onClick={() => flagShift(shift.id)} className="px-3 py-1 rounded-lg text-xs font-medium border border-rose-300 text-rose-700 hover:bg-rose-50 transition-colors">
-                            Flag
-                          </button>
-                        )}
-                        {isOwnerOrManager && (
-                          <button onClick={() => handleDelete(shift)} className="p-1 rounded-lg text-on-surface-variant hover:text-rose-600 hover:bg-rose-50 transition-colors">
-                            <span className="material-symbols-outlined text-[16px]">delete</span>
-                          </button>
-                        )}
-                      </div>
-                    </td>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-outline-variant">
+                    {shift.status === 'open' && (
+                      <button onClick={() => setShiftToClose(shift)} className="px-3 py-1.5 rounded-lg text-xs font-medium border border-blue-300 text-blue-700 hover:bg-blue-50 transition-colors">
+                        Close
+                      </button>
+                    )}
+                    {shift.status !== 'open' && (
+                      <button onClick={() => setShiftToEdit(shift)} className="px-3 py-1.5 rounded-lg text-xs font-medium border border-outline-variant text-on-surface-variant hover:bg-surface-container transition-colors">
+                        Edit
+                      </button>
+                    )}
+                    {isOwnerOrManager && shift.status === 'open' && (
+                      <button onClick={() => flagShift(shift.id)} className="px-3 py-1.5 rounded-lg text-xs font-medium border border-rose-300 text-rose-700 hover:bg-rose-50 transition-colors">
+                        Flag
+                      </button>
+                    )}
+                    {isOwnerOrManager && (
+                      <button onClick={() => handleDelete(shift)} className="ml-auto p-1.5 rounded-lg text-on-surface-variant hover:text-rose-600 hover:bg-rose-50 transition-colors" aria-label="Delete shift">
+                        <span className="material-symbols-outlined text-[18px]">delete</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Desktop: table */}
+          <div className="hidden md:block bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-surface-container-low border-b border-outline-variant">
+                <tr>
+                  {['Salesman', 'Date', 'Litres', 'Revenue', 'Cash Variance', 'DIP Var%', 'Status', 'Actions'].map((h) => (
+                    <th key={h} className="text-left px-5 py-3 text-on-surface-variant font-semibold text-xs uppercase tracking-wider whitespace-nowrap">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {displayedShifts.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-5 py-8 text-center text-on-surface-variant text-sm">No shifts found</td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ) : (
+                  displayedShifts.map((shift, i) => (
+                    <tr key={shift.id} className={cn('border-b border-outline-variant last:border-0', i % 2 ? 'bg-surface-container-low/30' : '')}>
+                      <td className="px-5 py-3 font-medium text-on-surface whitespace-nowrap">{shift.salesmanName}</td>
+                      <td className="px-5 py-3 text-on-surface-variant whitespace-nowrap">
+                        {new Date(shift.openedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                      </td>
+                      <td className="px-5 py-3 text-on-surface text-right whitespace-nowrap">
+                        {shift.totalLitresSold > 0 ? `${shift.totalLitresSold.toLocaleString('en-IN')} L` : '—'}
+                      </td>
+                      <td className="px-5 py-3 text-on-surface text-right whitespace-nowrap">
+                        {shift.totalCashCollected > 0 ? `₹${shift.totalCashCollected.toLocaleString('en-IN')}` : '—'}
+                      </td>
+                      <td className="px-5 py-3 text-right whitespace-nowrap">
+                        {shift.cashVariance !== 0 ? (
+                          <span className={cn('font-medium', shift.cashVariance < 0 ? 'text-rose-600' : 'text-emerald-600')}>
+                            {shift.cashVariance > 0 ? '+' : ''}₹{shift.cashVariance.toLocaleString('en-IN')}
+                          </span>
+                        ) : <span className="text-on-surface-variant">—</span>}
+                      </td>
+                      <td className="px-5 py-3 text-right whitespace-nowrap">
+                        {shift.dipVariancePct > 0 ? (
+                          <span className={cn('font-medium', shift.dipVariancePct > 2 ? 'text-red-600' : shift.dipVariancePct > 0.5 ? 'text-amber-600' : 'text-emerald-600')}>
+                            {shift.dipVariancePct}%
+                          </span>
+                        ) : <span className="text-on-surface-variant">—</span>}
+                      </td>
+                      <td className="px-5 py-3 whitespace-nowrap">
+                        <span className={cn('px-2 py-1 rounded-full text-xs font-semibold capitalize', STATUS_STYLES[shift.status] ?? 'bg-gray-100 text-gray-500')}>
+                          {shift.status}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          {shift.status === 'open' && (
+                            <button onClick={() => setShiftToClose(shift)} className="px-3 py-1 rounded-lg text-xs font-medium border border-blue-300 text-blue-700 hover:bg-blue-50 transition-colors">
+                              Close
+                            </button>
+                          )}
+                          {shift.status !== 'open' && (
+                            <button onClick={() => setShiftToEdit(shift)} className="px-3 py-1 rounded-lg text-xs font-medium border border-outline-variant text-on-surface-variant hover:bg-surface-container transition-colors">
+                              Edit
+                            </button>
+                          )}
+                          {isOwnerOrManager && shift.status === 'open' && (
+                            <button onClick={() => flagShift(shift.id)} className="px-3 py-1 rounded-lg text-xs font-medium border border-rose-300 text-rose-700 hover:bg-rose-50 transition-colors">
+                              Flag
+                            </button>
+                          )}
+                          {isOwnerOrManager && (
+                            <button onClick={() => handleDelete(shift)} className="p-1 rounded-lg text-on-surface-variant hover:text-rose-600 hover:bg-rose-50 transition-colors">
+                              <span className="material-symbols-outlined text-[16px]">delete</span>
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {openShiftModal && (

@@ -53,42 +53,42 @@ export default function RoleSelectorPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <div className="w-full max-w-lg">
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-on-surface">Choose Your Role</h1>
-          <p className="text-on-surface-variant text-sm mt-2">
+    <div className="min-h-screen bg-background flex items-center justify-center p-3 sm:p-4">
+      <div className="w-full max-w-sm sm:max-w-lg">
+        <div className="text-center mb-6 sm:mb-8">
+          <h1 className="text-2xl sm:text-3xl font-bold text-on-surface">Choose Your Role</h1>
+          <p className="text-on-surface-variant text-sm mt-2 px-2">
             Select how you'd like to enter PetroDisk for this session
           </p>
         </div>
 
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3 sm:gap-4">
           {ROLES.map(({ role, label, description, icon, bg, iconColor }) => (
             <button
               key={role}
               onClick={() => handleSelect(role)}
-              className="w-full flex items-center gap-5 p-5 bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm hover:border-primary hover:shadow-md transition-all text-left group"
+              className="w-full flex items-center gap-3 sm:gap-5 p-4 sm:p-5 bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm hover:border-primary hover:shadow-md transition-all text-left group min-h-[72px]"
             >
               <div
-                className={`flex-shrink-0 flex items-center justify-center size-14 rounded-xl ${bg}`}
+                className={`flex-shrink-0 flex items-center justify-center size-12 sm:size-14 rounded-xl ${bg}`}
               >
-                <span className={`material-symbols-outlined text-3xl ${iconColor}`}>{icon}</span>
+                <span className={`material-symbols-outlined text-2xl sm:text-3xl ${iconColor}`}>{icon}</span>
               </div>
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <p className="font-semibold text-on-surface text-base">{label}</p>
-                <p className="text-on-surface-variant text-sm mt-0.5">{description}</p>
+                <p className="text-on-surface-variant text-sm mt-0.5 leading-snug">{description}</p>
               </div>
-              <span className="material-symbols-outlined text-outline-variant group-hover:text-primary transition-colors">
+              <span className="material-symbols-outlined text-outline-variant group-hover:text-primary transition-colors flex-shrink-0 hidden sm:inline-block">
                 arrow_forward
               </span>
             </button>
           ))}
         </div>
 
-        <div className="text-center mt-6">
+        <div className="text-center mt-5 sm:mt-6">
           <a
             href="/login"
-            className="text-sm text-on-surface-variant hover:text-on-surface transition-colors"
+            className="inline-block py-2 px-4 text-sm text-on-surface-variant hover:text-on-surface transition-colors"
           >
             ← Back to login
           </a>
