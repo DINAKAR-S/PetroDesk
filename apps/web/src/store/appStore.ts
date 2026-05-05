@@ -198,20 +198,24 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   addDispenserUnit: async (d) => {
-    const { data } = await supabase.from('dispenser_units').insert({
+    const { data, error } = await supabase.from('dispenser_units').insert({
       bunk_id: BUNK_ID,
       number: d.number,
       display_name: d.displayName,
     }).select().single()
-    if (data) {
-      set((s) => ({
-        dispenserUnits: [...s.dispenserUnits, {
-          id: data.id as string,
-          number: data.number as string,
-          displayName: data.display_name as string,
-        }],
-      }))
+    if (error) {
+      throw new Error(error.message)
     }
+    if (!data) {
+      throw new Error('Dispenser unit insert returned no row')
+    }
+    set((s) => ({
+      dispenserUnits: [...s.dispenserUnits, {
+        id: data.id as string,
+        number: data.number as string,
+        displayName: data.display_name as string,
+      }],
+    }))
   },
 
   updateDispenserUnit: async (id, data) => {
@@ -248,7 +252,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       throw new Error('Slot already used in this dispenser unit')
     }
 
-    const { data } = await supabase.from('nozzles').insert({
+    const { data, error } = await supabase.from('nozzles').insert({
       bunk_id: BUNK_ID,
       dispenser_unit_id: n.dispenserUnitId,
       tank_id: n.tankId,
@@ -256,18 +260,22 @@ export const useAppStore = create<AppState>((set, get) => ({
       fuel_type: n.fuelType,
       name: n.name,
     }).select().single()
-    if (data) {
-      set((s) => ({
-        nozzles: [...s.nozzles, {
-          id: data.id as string,
-          name: data.name as string,
-          dispenserUnitId: data.dispenser_unit_id as string,
-          tankId: data.tank_id as string,
-          slot: Number(data.slot) as NozzleSlot,
-          fuelType: data.fuel_type as 'MS' | 'HSD',
-        }],
-      }))
+    if (error) {
+      throw new Error(error.message)
     }
+    if (!data) {
+      throw new Error('Nozzle insert returned no row')
+    }
+    set((s) => ({
+      nozzles: [...s.nozzles, {
+        id: data.id as string,
+        name: data.name as string,
+        dispenserUnitId: data.dispenser_unit_id as string,
+        tankId: data.tank_id as string,
+        slot: Number(data.slot) as NozzleSlot,
+        fuelType: data.fuel_type as 'MS' | 'HSD',
+      }],
+    }))
   },
 
   updateNozzle: async (id, data) => {

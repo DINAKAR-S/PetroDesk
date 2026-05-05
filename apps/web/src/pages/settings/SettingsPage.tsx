@@ -199,14 +199,12 @@ function DispenserUnitsTab() {
 
     setBusy(true)
     try {
-      const before = useAppStore.getState().dispenserUnits.length
       await addDispenserUnit({ number, displayName })
-      // Find the DU we just created (the new entry in the store).
       const after = useAppStore.getState().dispenserUnits
-      if (after.length <= before) {
-        throw new Error('Dispenser unit creation did not return a new record')
-      }
       const newDu = after[after.length - 1]
+      if (!newDu) {
+        throw new Error('Dispenser unit was created but not found in store')
+      }
 
       // Create 4 nozzles in sequence so a failure mid-way is reported clearly.
       for (let i = 0; i < addForm.nozzles.length; i++) {
