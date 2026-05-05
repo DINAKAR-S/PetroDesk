@@ -11,6 +11,10 @@ import type {
   DispenserUnit,
   FuelType,
   NozzleSlot,
+  OtherSalesItem,
+  ElectronicMethod,
+  ExpenseCategory,
+  Customer,
 } from '@/types'
 
 const DATE_FILTERS: { label: string; value: DateFilter }[] = [
@@ -508,6 +512,335 @@ interface ClosingRowState {
   closingCumSale: string
 }
 
+// ─── Close Shift modal: section row types ────────────────────
+
+interface OtherSalesRowState {
+  itemId: string | null
+  itemName: string
+  quantity: number
+  amount: number
+}
+
+interface ElectronicRowState {
+  methodId: string | null
+  methodName: string
+  amount: number
+}
+
+interface CreditRowState {
+  customerId: string | null
+  customerName: string
+  amount: number
+}
+
+interface ExpenseRowState {
+  categoryId: string | null
+  categoryName: string
+  amount: number
+  description: string | null
+}
+
+// ─── Customer Search subcomponent (for credit section) ────────
+
+interface CustomerSearchProps {
+  customers: Customer[]
+  onPick: (customer: Customer) => void
+}
+
+function CustomerSearch({ customers, onPick }: CustomerSearchProps) {
+  const findOrCreateCustomerByName = useAppStore((s) => s.findOrCreateCustomerByName)
+  const [query, setQuery] = useState('')
+  const [showCreate, setShowCreate] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newPhone, setNewPhone] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
+
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (q === '') return []
+    return customers
+      .filter((c) => c.name.toLowerCase().includes(q))
+      .slice(0, 8)
+  }, [customers, query])
+
+  async function handleCreate(): Promise<void> {
+    setCreateError(null)
+    const name = newName.trim()
+    if (name === '') {
+      setCreateError('Enter a customer name')
+      return
+    }
+    setCreating(true)
+    try {
+      const phoneVal = newPhone.trim() === '' ? null : newPhone.trim()
+      const created = await findOrCreateCustomerByName(name, phoneVal)
+      onPick(created)
+      setQuery('')
+      setNewName('')
+      setNewPhone('')
+      setShowCreate(false)
+    } catch (err: unknown) {
+      setCreateError(err instanceof Error ? err.message : 'Failed to create customer')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value)
+          setShowCreate(false)
+        }}
+        placeholder="Search customer by name…"
+        className="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+      />
+      {query.trim() !== '' && !showCreate && (
+        <div className="flex flex-col gap-1">
+          {matches.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => {
+                onPick(c)
+                setQuery('')
+              }}
+              className="text-left px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest hover:bg-surface-container text-sm text-on-surface"
+            >
+              <div className="font-medium">{c.name}</div>
+              {c.phone && (
+                <div className="text-xs text-on-surface-variant">{c.phone}</div>
+              )}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => {
+              setNewName(query.trim())
+              setShowCreate(true)
+            }}
+            className="text-left px-3 py-2 rounded-lg border border-dashed border-outline-variant bg-surface-container/40 hover:bg-surface-container text-sm text-primary"
+          >
+            + Add new customer "{query.trim()}" (phone optional)
+          </button>
+        </div>
+      )}
+      {showCreate && (
+        <div className="flex flex-col gap-2 p-3 rounded-xl border border-outline-variant bg-surface-container/40">
+          <div className="flex flex-col gap-1">
+            <label className="text-on-surface-variant text-xs">Name</label>
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-on-surface-variant text-xs">Phone (optional)</label>
+            <input
+              type="tel"
+              inputMode="tel"
+              value={newPhone}
+              onChange={(e) => setNewPhone(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </div>
+          {createError && (
+            <div className="text-xs text-rose-700">{createError}</div>
+          )}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setShowCreate(false)}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium text-on-surface-variant bg-surface-container hover:bg-surface-container-high"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleCreate}
+              disabled={creating}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-primary text-on-primary hover:opacity-90 disabled:opacity-60"
+            >
+              {creating ? 'Saving…' : 'Save customer'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Per-catalog inline-add row subcomponents ─────────────────
+
+interface OtherSalesCatalogRowProps {
+  item: OtherSalesItem
+  onAdd: (entry: OtherSalesRowState) => void
+}
+
+function OtherSalesCatalogRow({ item, onAdd }: OtherSalesCatalogRowProps) {
+  const options = item.quantityOptions.length > 0 ? item.quantityOptions : [1]
+  const [qty, setQty] = useState<number>(options[0])
+  const amount = qty * item.pricePerLitre
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto_auto] gap-2 items-end px-3 py-2 rounded-xl border border-outline-variant bg-surface-container-lowest">
+      <div className="flex flex-col gap-0.5">
+        <span className="text-on-surface text-sm font-medium">{item.name}</span>
+        <span className="text-on-surface-variant text-xs">
+          ₹{item.pricePerLitre.toLocaleString('en-IN')}/L
+        </span>
+      </div>
+      <div className="flex flex-col gap-1">
+        <label className="text-on-surface-variant text-xs">Quantity</label>
+        <select
+          value={qty}
+          onChange={(e) => setQty(Number(e.target.value))}
+          className="px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-sm"
+        >
+          {options.map((o) => (
+            <option key={o} value={o}>
+              {o} L
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="flex flex-col gap-0.5 min-w-[5rem]">
+        <span className="text-on-surface-variant text-xs">Amount</span>
+        <span className="text-on-surface font-medium text-sm">
+          ₹{amount.toLocaleString('en-IN')}
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={() =>
+          onAdd({
+            itemId: item.id,
+            itemName: item.name,
+            quantity: qty,
+            amount,
+          })
+        }
+        className="px-3 py-2 rounded-lg text-xs font-medium bg-primary text-on-primary hover:opacity-90"
+      >
+        + Add
+      </button>
+    </div>
+  )
+}
+
+interface ElectronicCatalogRowProps {
+  method: ElectronicMethod
+  onAdd: (entry: ElectronicRowState) => void
+}
+
+function ElectronicCatalogRow({ method, onAdd }: ElectronicCatalogRowProps) {
+  const [amount, setAmount] = useState('')
+  const num = amount === '' ? 0 : Number(amount)
+
+  function handleAdd(): void {
+    if (amount === '' || Number.isNaN(num) || num <= 0) return
+    onAdd({ methodId: method.id, methodName: method.name, amount: num })
+    setAmount('')
+  }
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-2 items-end px-3 py-2 rounded-xl border border-outline-variant bg-surface-container-lowest">
+      <div className="flex flex-col gap-0.5">
+        <span className="text-on-surface text-sm font-medium">{method.name}</span>
+      </div>
+      <div className="flex flex-col gap-1">
+        <label className="text-on-surface-variant text-xs">Amount (₹)</label>
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          inputMode="decimal"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          placeholder="0"
+          className="px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-sm w-32"
+        />
+      </div>
+      <button
+        type="button"
+        onClick={handleAdd}
+        disabled={amount === '' || Number.isNaN(num) || num <= 0}
+        className="px-3 py-2 rounded-lg text-xs font-medium bg-primary text-on-primary hover:opacity-90 disabled:opacity-50"
+      >
+        + Add
+      </button>
+    </div>
+  )
+}
+
+interface ExpenseCatalogRowProps {
+  category: ExpenseCategory
+  onAdd: (entry: ExpenseRowState) => void
+}
+
+function ExpenseCatalogRow({ category, onAdd }: ExpenseCatalogRowProps) {
+  const [amount, setAmount] = useState('')
+  const [description, setDescription] = useState('')
+  const num = amount === '' ? 0 : Number(amount)
+
+  function handleAdd(): void {
+    if (amount === '' || Number.isNaN(num) || num <= 0) return
+    onAdd({
+      categoryId: category.id,
+      categoryName: category.name,
+      amount: num,
+      description: description.trim() === '' ? null : description.trim(),
+    })
+    setAmount('')
+    setDescription('')
+  }
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto_auto] gap-2 items-end px-3 py-2 rounded-xl border border-outline-variant bg-surface-container-lowest">
+      <div className="flex flex-col gap-0.5">
+        <span className="text-on-surface text-sm font-medium">{category.name}</span>
+      </div>
+      <div className="flex flex-col gap-1">
+        <label className="text-on-surface-variant text-xs">Description (optional)</label>
+        <input
+          type="text"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Note…"
+          className="px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-sm"
+        />
+      </div>
+      <div className="flex flex-col gap-1">
+        <label className="text-on-surface-variant text-xs">Amount (₹)</label>
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          inputMode="decimal"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          placeholder="0"
+          className="px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-sm w-32"
+        />
+      </div>
+      <button
+        type="button"
+        onClick={handleAdd}
+        disabled={amount === '' || Number.isNaN(num) || num <= 0}
+        className="px-3 py-2 rounded-lg text-xs font-medium bg-primary text-on-primary hover:opacity-90 disabled:opacity-50"
+      >
+        + Add
+      </button>
+    </div>
+  )
+}
+
 export function CloseShiftModal({ shift, onClose }: CloseShiftModalProps) {
   const loadNozzleReadings = useShiftsStore((s) => s.loadNozzleReadings)
   const closeShift = useShiftsStore((s) => s.closeShift)
@@ -515,9 +848,49 @@ export function CloseShiftModal({ shift, onClose }: CloseShiftModalProps) {
     s.nozzleReadings.filter((r) => r.shiftId === shift.id),
   )
 
+  // Phase 2 catalogs
+  const otherSalesItems = useAppStore((s) => s.otherSalesItems)
+  const electronicMethods = useAppStore((s) => s.electronicMethods)
+  const expenseCategoriesCatalog = useAppStore((s) => s.expenseCategories)
+  const customers = useAppStore((s) => s.customers)
+
+  const activeOtherSalesItems = useMemo(
+    () => otherSalesItems.filter((i) => i.active),
+    [otherSalesItems],
+  )
+  const activeElectronicMethods = useMemo(
+    () => electronicMethods.filter((m) => m.active),
+    [electronicMethods],
+  )
+  const activeExpenseCategories = useMemo(
+    () => expenseCategoriesCatalog.filter((c) => c.active),
+    [expenseCategoriesCatalog],
+  )
+
   const [rows, setRows] = useState<ClosingRowState[]>([])
   const [hydrated, setHydrated] = useState(false)
-  const [cashCollected, setCashCollected] = useState('')
+
+  // Section state
+  const [testing, setTesting] = useState({
+    msVolume: '',
+    msSale: '',
+    hsdVolume: '',
+    hsdSale: '',
+  })
+  const [otherSalesEntries, setOtherSalesEntries] = useState<OtherSalesRowState[]>([])
+  const [electronicEntries, setElectronicEntries] = useState<ElectronicRowState[]>([])
+  const [creditEntries, setCreditEntries] = useState<CreditRowState[]>([])
+  const [expenseEntries, setExpenseEntries] = useState<ExpenseRowState[]>([])
+
+  // Credit section: picked customer + amount input
+  const [creditCustomer, setCreditCustomer] = useState<Customer | null>(null)
+  const [creditAmount, setCreditAmount] = useState('')
+
+  // Cash + handover
+  const [cashInHand, setCashInHand] = useState('')
+  const [handoverToNext, setHandoverToNext] = useState('')
+  const [depositToOwner, setDepositToOwner] = useState('')
+
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -575,8 +948,6 @@ export function CloseShiftModal({ shift, onClose }: CloseShiftModalProps) {
   const anyInvalid = rows.some((r) => rowDelta(r).invalid)
 
   // One pass over rows produces every total + per-fuel split.
-  // `Math.max(0, ...)` keeps invalid (negative) deltas from polluting totals
-  // before the user fixes them; submit is blocked separately by `anyInvalid`.
   const totals = rows.reduce(
     (acc, r) => {
       const { litres, rupees } = rowDelta(r)
@@ -597,9 +968,83 @@ export function CloseShiftModal({ shift, onClose }: CloseShiftModalProps) {
   )
   const { totalLitres, totalRevenue, msLitres, hsdLitres, msRevenue, hsdRevenue } = totals
 
-  const cashFilled = cashCollected !== ''
-  const cashNum = cashFilled ? Number(cashCollected) : 0
-  const cashVariance = cashFilled ? cashNum - totalRevenue : 0
+  // Testing parsed numbers
+  const testingNums = {
+    msVolume: testing.msVolume === '' ? 0 : Number(testing.msVolume) || 0,
+    msSale: testing.msSale === '' ? 0 : Number(testing.msSale) || 0,
+    hsdVolume: testing.hsdVolume === '' ? 0 : Number(testing.hsdVolume) || 0,
+    hsdSale: testing.hsdSale === '' ? 0 : Number(testing.hsdSale) || 0,
+  }
+  const testingTotalVolume = testingNums.msVolume + testingNums.hsdVolume
+  const testingTotalSale = testingNums.msSale + testingNums.hsdSale
+
+  // Adjusted totals (after subtracting testing volume/sale)
+  const adjustedLitres = totalLitres - testingTotalVolume
+  const adjustedRevenue = totalRevenue - testingTotalSale
+
+  // Section sub-totals
+  const totalOtherSales = otherSalesEntries.reduce((sum, e) => sum + e.amount, 0)
+  const totalElectronic = electronicEntries.reduce((sum, e) => sum + e.amount, 0)
+  const totalCredit = creditEntries.reduce((sum, e) => sum + e.amount, 0)
+  const totalExpensesAmt = expenseEntries.reduce((sum, e) => sum + e.amount, 0)
+
+  // Cash Expected (live):
+  // Adjusted Revenue + Other Sales − Electronic − Credit − Expenses
+  const cashExpected =
+    adjustedRevenue + totalOtherSales - totalElectronic - totalCredit - totalExpensesAmt
+
+  const cashFilled = cashInHand !== ''
+  const cashInHandNum = cashFilled ? Number(cashInHand) || 0 : 0
+  const cashVariance = cashFilled ? cashInHandNum - cashExpected : 0
+
+  const handoverNum = handoverToNext === '' ? 0 : Number(handoverToNext) || 0
+  const depositNum = depositToOwner === '' ? 0 : Number(depositToOwner) || 0
+  const handoverSum = handoverNum + depositNum
+  const handoverMatches = cashFilled && Math.abs(handoverSum - cashInHandNum) < 0.005
+
+  function handleAddOtherSale(entry: OtherSalesRowState): void {
+    setOtherSalesEntries((prev) => [...prev, entry])
+  }
+  function handleRemoveOtherSale(idx: number): void {
+    setOtherSalesEntries((prev) => prev.filter((_, i) => i !== idx))
+  }
+  function handleAddElectronic(entry: ElectronicRowState): void {
+    setElectronicEntries((prev) => [...prev, entry])
+  }
+  function handleRemoveElectronic(idx: number): void {
+    setElectronicEntries((prev) => prev.filter((_, i) => i !== idx))
+  }
+  function handleAddCredit(): void {
+    if (!creditCustomer) return
+    const num = creditAmount === '' ? 0 : Number(creditAmount)
+    if (Number.isNaN(num) || num <= 0) return
+    setCreditEntries((prev) => [
+      ...prev,
+      {
+        customerId: creditCustomer.id,
+        customerName: creditCustomer.name,
+        amount: num,
+      },
+    ])
+    setCreditCustomer(null)
+    setCreditAmount('')
+  }
+  function handleRemoveCredit(idx: number): void {
+    setCreditEntries((prev) => prev.filter((_, i) => i !== idx))
+  }
+  function handleAddExpense(entry: ExpenseRowState): void {
+    setExpenseEntries((prev) => [...prev, entry])
+  }
+  function handleRemoveExpense(idx: number): void {
+    setExpenseEntries((prev) => prev.filter((_, i) => i !== idx))
+  }
+
+  const submitDisabled =
+    submitting ||
+    anyInvalid ||
+    !allRowsFilled ||
+    !cashFilled ||
+    !handoverMatches
 
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault()
@@ -613,7 +1058,11 @@ export function CloseShiftModal({ shift, onClose }: CloseShiftModalProps) {
       return
     }
     if (!cashFilled) {
-      setError('Enter the cash collected.')
+      setError('Enter cash in hand.')
+      return
+    }
+    if (!handoverMatches) {
+      setError('Handover + Deposit must equal Cash in Hand.')
       return
     }
     setSubmitting(true)
@@ -625,7 +1074,32 @@ export function CloseShiftModal({ shift, onClose }: CloseShiftModalProps) {
           closingCumVolume: Number(r.closingCumVolume),
           closingCumSale: Number(r.closingCumSale),
         })),
-        cashCollected: cashNum,
+        testing: testingNums,
+        otherSales: otherSalesEntries.map((e) => ({
+          itemId: e.itemId,
+          itemName: e.itemName,
+          quantity: e.quantity,
+          amount: e.amount,
+        })),
+        electronic: electronicEntries.map((e) => ({
+          methodId: e.methodId,
+          methodName: e.methodName,
+          amount: e.amount,
+        })),
+        credit: creditEntries.map((e) => ({
+          customerId: e.customerId,
+          customerName: e.customerName,
+          amount: e.amount,
+        })),
+        expenses: expenseEntries.map((e) => ({
+          categoryId: e.categoryId,
+          categoryName: e.categoryName,
+          amount: e.amount,
+          description: e.description,
+        })),
+        cashInHand: cashInHandNum,
+        handoverToNext: handoverNum,
+        depositToOwner: depositNum,
       })
       onClose()
     } catch (err: unknown) {
@@ -655,17 +1129,17 @@ export function CloseShiftModal({ shift, onClose }: CloseShiftModalProps) {
           <p className="text-on-surface-variant text-sm">No nozzle readings to close.</p>
         ) : (
           <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-            {/* Per-nozzle rows */}
-            <section className="flex flex-col gap-3">
+            {/* A. Per-nozzle rows */}
+            <section className="flex flex-col gap-3 bg-surface-container/40 border border-outline-variant rounded-xl p-4">
               <h3 className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider">
-                Meter Readings
+                A. Meter Readings
               </h3>
               {rows.map((r, i) => {
                 const d = rowDelta(r)
                 return (
                   <div
                     key={r.nozzleId}
-                    className="px-3 py-3 rounded-xl border border-outline-variant bg-surface-container/40 flex flex-col gap-2"
+                    className="px-3 py-3 rounded-xl border border-outline-variant bg-surface-container-lowest flex flex-col gap-2"
                   >
                     <div className="text-on-surface text-sm font-medium">
                       Nozzle {r.slot} — {FUEL_LABELS[r.fuelType]} — {r.nozzleName}
@@ -775,10 +1249,10 @@ export function CloseShiftModal({ shift, onClose }: CloseShiftModalProps) {
               })}
             </section>
 
-            {/* Sub-totals */}
-            <section className="flex flex-col gap-2">
+            {/* B. Totals */}
+            <section className="flex flex-col gap-2 bg-surface-container/40 border border-outline-variant rounded-xl p-4">
               <h3 className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider">
-                Totals
+                B. Totals
               </h3>
               <div className="grid grid-cols-2 gap-2 px-3 py-3 rounded-xl bg-surface-container">
                 <div className="flex flex-col gap-0.5">
@@ -826,43 +1300,460 @@ export function CloseShiftModal({ shift, onClose }: CloseShiftModalProps) {
               </div>
             </section>
 
-            {/* Cash */}
-            <section className="flex flex-col gap-3">
+            {/* C. Testing */}
+            <section className="flex flex-col gap-3 bg-surface-container/40 border border-outline-variant rounded-xl p-4">
               <h3 className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider">
-                Cash
+                C. Testing
               </h3>
+              <p className="text-on-surface-variant text-xs">
+                Volume and sale value drained for daily density / quality testing — subtracted from totals.
+              </p>
+              {(['MS', 'HSD'] as const).map((fuel) => {
+                const volKey = fuel === 'MS' ? 'msVolume' : 'hsdVolume'
+                const saleKey = fuel === 'MS' ? 'msSale' : 'hsdSale'
+                return (
+                  <div
+                    key={fuel}
+                    className="grid grid-cols-1 sm:grid-cols-[8rem_1fr_1fr] gap-2 items-end px-3 py-2 rounded-xl border border-outline-variant bg-surface-container-lowest"
+                  >
+                    <div className="text-on-surface text-sm font-medium">
+                      {FUEL_LABELS[fuel]}
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-on-surface-variant text-xs">CumVolume (L)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        inputMode="decimal"
+                        value={testing[volKey]}
+                        onChange={(e) =>
+                          setTesting((prev) => ({ ...prev, [volKey]: e.target.value }))
+                        }
+                        placeholder="0"
+                        className="px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-sm"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-on-surface-variant text-xs">CumSale (₹)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        inputMode="decimal"
+                        value={testing[saleKey]}
+                        onChange={(e) =>
+                          setTesting((prev) => ({ ...prev, [saleKey]: e.target.value }))
+                        }
+                        placeholder="0"
+                        className="px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-sm"
+                      />
+                    </div>
+                  </div>
+                )
+              })}
+              <div className="px-3 py-2 rounded-xl bg-surface-container text-sm text-on-surface-variant break-words">
+                Adjusted Total:{' '}
+                <span className="text-on-surface font-medium">
+                  {adjustedLitres.toLocaleString('en-IN')} L
+                </span>
+                {' · '}
+                <span className="text-on-surface font-medium">
+                  ₹{adjustedRevenue.toLocaleString('en-IN')}
+                </span>
+              </div>
+            </section>
+
+            {/* D. Other Sales */}
+            <section className="flex flex-col gap-3 bg-surface-container/40 border border-outline-variant rounded-xl p-4">
+              <h3 className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider">
+                D. Other Sales
+              </h3>
+              {activeOtherSalesItems.length === 0 ? (
+                <div className="px-3 py-2 rounded-xl border border-outline-variant bg-surface-container/60 text-sm text-on-surface-variant">
+                  Configure Other Sales items in Settings to use this section.
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {activeOtherSalesItems.map((item) => (
+                    <OtherSalesCatalogRow
+                      key={item.id}
+                      item={item}
+                      onAdd={handleAddOtherSale}
+                    />
+                  ))}
+                </div>
+              )}
+              {otherSalesEntries.length > 0 && (
+                <div className="flex flex-col gap-1">
+                  {otherSalesEntries.map((e, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-surface-container text-sm"
+                    >
+                      <span className="text-on-surface">
+                        {e.itemName} · {e.quantity}L · ₹{e.amount.toLocaleString('en-IN')}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveOtherSale(i)}
+                        aria-label="Remove entry"
+                        className="text-on-surface-variant hover:text-rose-600"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="px-3 py-2 rounded-xl bg-surface-container text-sm text-on-surface-variant">
+                Sub-total:{' '}
+                <span className="text-on-surface font-medium">
+                  ₹{totalOtherSales.toLocaleString('en-IN')}
+                </span>
+              </div>
+            </section>
+
+            {/* E. Cash Expected (derived) */}
+            <section className="flex flex-col gap-2 bg-surface-container/40 border border-outline-variant rounded-xl p-4">
+              <h3 className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider">
+                E. Cash Expected
+              </h3>
+              <p className="text-on-surface-variant text-xs">
+                Adjusted Revenue + Other Sales − Electronic − Credit − Expenses
+              </p>
+              <div className="px-3 py-3 rounded-xl bg-surface-container text-on-surface text-lg font-semibold">
+                ₹{cashExpected.toLocaleString('en-IN')}
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs text-on-surface-variant">
+                <span>
+                  Adj. Rev:{' '}
+                  <span className="text-on-surface font-medium">
+                    ₹{adjustedRevenue.toLocaleString('en-IN')}
+                  </span>
+                </span>
+                <span>
+                  + Other:{' '}
+                  <span className="text-on-surface font-medium">
+                    ₹{totalOtherSales.toLocaleString('en-IN')}
+                  </span>
+                </span>
+                <span>
+                  − Elec:{' '}
+                  <span className="text-on-surface font-medium">
+                    ₹{totalElectronic.toLocaleString('en-IN')}
+                  </span>
+                </span>
+                <span>
+                  − Credit:{' '}
+                  <span className="text-on-surface font-medium">
+                    ₹{totalCredit.toLocaleString('en-IN')}
+                  </span>
+                </span>
+                <span>
+                  − Exp:{' '}
+                  <span className="text-on-surface font-medium">
+                    ₹{totalExpensesAmt.toLocaleString('en-IN')}
+                  </span>
+                </span>
+              </div>
+            </section>
+
+            {/* F. Electronic Transactions */}
+            <section className="flex flex-col gap-3 bg-surface-container/40 border border-outline-variant rounded-xl p-4">
+              <h3 className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider">
+                F. Electronic Transactions
+              </h3>
+              {activeElectronicMethods.length === 0 ? (
+                <div className="px-3 py-2 rounded-xl border border-outline-variant bg-surface-container/60 text-sm text-on-surface-variant">
+                  Configure Electronic methods in Settings to use this section.
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {activeElectronicMethods.map((method) => (
+                    <ElectronicCatalogRow
+                      key={method.id}
+                      method={method}
+                      onAdd={handleAddElectronic}
+                    />
+                  ))}
+                </div>
+              )}
+              {electronicEntries.length > 0 && (
+                <div className="flex flex-col gap-1">
+                  {electronicEntries.map((e, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-surface-container text-sm"
+                    >
+                      <span className="text-on-surface">
+                        {e.methodName} · ₹{e.amount.toLocaleString('en-IN')}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveElectronic(i)}
+                        aria-label="Remove entry"
+                        className="text-on-surface-variant hover:text-rose-600"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="px-3 py-2 rounded-xl bg-surface-container text-sm text-on-surface-variant">
+                Sub-total:{' '}
+                <span className="text-on-surface font-medium">
+                  ₹{totalElectronic.toLocaleString('en-IN')}
+                </span>
+              </div>
+            </section>
+
+            {/* G. Customer Credit */}
+            <section className="flex flex-col gap-3 bg-surface-container/40 border border-outline-variant rounded-xl p-4">
+              <h3 className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider">
+                G. Customer Credit (Khaata)
+              </h3>
+              {creditCustomer ? (
+                <div className="flex flex-col gap-2 px-3 py-2 rounded-xl border border-outline-variant bg-surface-container-lowest">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-col">
+                      <span className="text-on-surface font-medium text-sm">
+                        {creditCustomer.name}
+                      </span>
+                      {creditCustomer.phone && (
+                        <span className="text-on-surface-variant text-xs">
+                          {creditCustomer.phone}
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCreditCustomer(null)
+                        setCreditAmount('')
+                      }}
+                      className="text-on-surface-variant hover:text-rose-600 text-xs"
+                    >
+                      Change
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-end">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-on-surface-variant text-xs">Amount (₹)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        inputMode="decimal"
+                        value={creditAmount}
+                        onChange={(e) => setCreditAmount(e.target.value)}
+                        placeholder="0"
+                        className="px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-sm"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleAddCredit}
+                      disabled={
+                        creditAmount === '' ||
+                        Number.isNaN(Number(creditAmount)) ||
+                        Number(creditAmount) <= 0
+                      }
+                      className="px-3 py-2 rounded-lg text-xs font-medium bg-primary text-on-primary hover:opacity-90 disabled:opacity-50"
+                    >
+                      + Add
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <CustomerSearch customers={customers} onPick={setCreditCustomer} />
+              )}
+              {creditEntries.length > 0 && (
+                <div className="flex flex-col gap-1">
+                  {creditEntries.map((e, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-surface-container text-sm"
+                    >
+                      <span className="text-on-surface">
+                        {e.customerName} · ₹{e.amount.toLocaleString('en-IN')}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveCredit(i)}
+                        aria-label="Remove entry"
+                        className="text-on-surface-variant hover:text-rose-600"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="px-3 py-2 rounded-xl bg-surface-container text-sm text-on-surface-variant">
+                Sub-total:{' '}
+                <span className="text-on-surface font-medium">
+                  ₹{totalCredit.toLocaleString('en-IN')}
+                </span>
+              </div>
+            </section>
+
+            {/* H. Expenses */}
+            <section className="flex flex-col gap-3 bg-surface-container/40 border border-outline-variant rounded-xl p-4">
+              <h3 className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider">
+                H. Expenses
+              </h3>
+              {activeExpenseCategories.length === 0 ? (
+                <div className="px-3 py-2 rounded-xl border border-outline-variant bg-surface-container/60 text-sm text-on-surface-variant">
+                  Configure Expense categories in Settings to use this section.
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {activeExpenseCategories.map((category) => (
+                    <ExpenseCatalogRow
+                      key={category.id}
+                      category={category}
+                      onAdd={handleAddExpense}
+                    />
+                  ))}
+                </div>
+              )}
+              {expenseEntries.length > 0 && (
+                <div className="flex flex-col gap-1">
+                  {expenseEntries.map((e, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-surface-container text-sm"
+                    >
+                      <span className="text-on-surface">
+                        {e.categoryName} · ₹{e.amount.toLocaleString('en-IN')}
+                        {e.description ? ` · ${e.description}` : ''}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveExpense(i)}
+                        aria-label="Remove entry"
+                        className="text-on-surface-variant hover:text-rose-600"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="px-3 py-2 rounded-xl bg-surface-container text-sm text-on-surface-variant">
+                Sub-total:{' '}
+                <span className="text-on-surface font-medium">
+                  ₹{totalExpensesAmt.toLocaleString('en-IN')}
+                </span>
+              </div>
+            </section>
+
+            {/* I. Cash Reconciliation */}
+            <section className="flex flex-col gap-3 bg-surface-container/40 border border-outline-variant rounded-xl p-4">
+              <h3 className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider">
+                I. Cash Reconciliation
+              </h3>
+              <div className="px-3 py-3 rounded-xl bg-surface-container">
+                <div className="text-xs text-on-surface-variant uppercase tracking-wider">
+                  Cash Expected
+                </div>
+                <div className="text-on-surface text-lg font-semibold">
+                  ₹{cashExpected.toLocaleString('en-IN')}
+                </div>
+              </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-on-surface-variant text-sm font-medium">
-                  Cash Collected (₹)
+                  Cash in Hand (₹)
                 </label>
                 <input
                   type="number"
                   min="0"
                   step="0.01"
                   inputMode="decimal"
-                  value={cashCollected}
-                  onChange={(e) => setCashCollected(e.target.value)}
-                  placeholder="Enter amount"
+                  value={cashInHand}
+                  onChange={(e) => setCashInHand(e.target.value)}
+                  placeholder="Counted physical cash"
                   className="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                 />
               </div>
-              <div className="px-3 py-2.5 rounded-xl bg-surface-container text-sm flex flex-col gap-1 break-words">
-                <span className="text-on-surface-variant">
-                  Expected:{' '}
-                  <span className="text-on-surface font-medium">
-                    ₹{totalRevenue.toLocaleString('en-IN')}
-                  </span>
+              {cashFilled && (
+                <div
+                  className={cn(
+                    'px-3 py-2 rounded-xl text-sm font-medium',
+                    cashVariance >= 0
+                      ? 'bg-emerald-50 text-emerald-700'
+                      : 'bg-rose-50 text-rose-700',
+                  )}
+                >
+                  Variance: {cashVariance >= 0 ? '+' : ''}₹
+                  {cashVariance.toLocaleString('en-IN')}
+                </div>
+              )}
+            </section>
+
+            {/* J. Handover */}
+            <section className="flex flex-col gap-3 bg-surface-container/40 border border-outline-variant rounded-xl p-4">
+              <h3 className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider">
+                J. Handover
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="flex flex-col gap-1">
+                  <label className="text-on-surface-variant text-sm font-medium">
+                    Handover to Next Shift (₹)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    inputMode="decimal"
+                    value={handoverToNext}
+                    onChange={(e) => setHandoverToNext(e.target.value)}
+                    placeholder="0"
+                    className="px-3 py-2.5 sm:py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-on-surface-variant text-sm font-medium">
+                    Deposit to Owner (₹)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    inputMode="decimal"
+                    value={depositToOwner}
+                    onChange={(e) => setDepositToOwner(e.target.value)}
+                    placeholder="0"
+                    className="px-3 py-2.5 sm:py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
+              </div>
+              <div
+                className={cn(
+                  'px-3 py-2 rounded-xl text-sm break-words',
+                  cashFilled && handoverMatches
+                    ? 'bg-emerald-50 text-emerald-700'
+                    : cashFilled
+                    ? 'bg-rose-50 text-rose-700'
+                    : 'bg-surface-container text-on-surface-variant',
+                )}
+              >
+                Handover + Deposit ={' '}
+                <span className="font-medium">
+                  ₹{handoverSum.toLocaleString('en-IN')}
                 </span>
-                {cashCollected !== '' && (
-                  <span
-                    className={cn(
-                      'font-medium',
-                      cashVariance >= 0 ? 'text-emerald-600' : 'text-rose-600',
-                    )}
-                  >
-                    Variance: {cashVariance >= 0 ? '+' : ''}₹
-                    {cashVariance.toLocaleString('en-IN')}
-                  </span>
+                {cashFilled && (
+                  <>
+                    {' '}
+                    · Required ={' '}
+                    <span className="font-medium">
+                      ₹{cashInHandNum.toLocaleString('en-IN')}
+                    </span>
+                    {' '}
+                    {handoverMatches ? '(matches)' : '(must match Cash in Hand)'}
+                  </>
                 )}
               </div>
             </section>
@@ -883,7 +1774,7 @@ export function CloseShiftModal({ shift, onClose }: CloseShiftModalProps) {
               </button>
               <button
                 type="submit"
-                disabled={submitting || anyInvalid || !allRowsFilled || !cashFilled}
+                disabled={submitDisabled}
                 className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-xl text-sm font-medium bg-primary text-on-primary hover:opacity-90 transition-opacity disabled:opacity-60"
               >
                 {submitting ? 'Closing…' : 'Close Shift'}

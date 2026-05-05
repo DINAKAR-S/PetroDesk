@@ -3,16 +3,39 @@ import { useNavigate } from 'react-router-dom'
 import { useAppStore } from '@/store/appStore'
 import { useAuthStore } from '@/store/authStore'
 import { cn } from '@/lib/utils'
-import type { Tank, Nozzle, NozzleSlot, User, FuelType, Role, DispenserUnit } from '@/types'
+import type {
+  Tank,
+  Nozzle,
+  NozzleSlot,
+  User,
+  FuelType,
+  Role,
+  DispenserUnit,
+  OtherSalesItem,
+  ElectronicMethod,
+  ExpenseCategory,
+} from '@/types'
 import { FUEL_LABELS, FUEL_TYPES, NOZZLE_SLOTS } from '@/lib/constants'
 
-type Tab = 'bunk' | 'dispensers' | 'tanks' | 'nozzles' | 'staff' | 'prices'
+type Tab =
+  | 'bunk'
+  | 'dispensers'
+  | 'tanks'
+  | 'nozzles'
+  | 'other-sales'
+  | 'electronic'
+  | 'expenses'
+  | 'staff'
+  | 'prices'
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'bunk', label: 'Bunk Profile', icon: 'storefront' },
   { id: 'dispensers', label: 'Dispenser Units', icon: 'view_module' },
   { id: 'tanks', label: 'Tanks', icon: 'water_drop' },
   { id: 'nozzles', label: 'Nozzles', icon: 'local_gas_station' },
+  { id: 'other-sales', label: 'Other Sales', icon: 'shopping_basket' },
+  { id: 'electronic', label: 'Electronic', icon: 'credit_card' },
+  { id: 'expenses', label: 'Expenses', icon: 'receipt_long' },
   { id: 'staff', label: 'Staff', icon: 'group' },
   { id: 'prices', label: 'Fuel Prices', icon: 'local_offer' },
 ]
@@ -1104,6 +1127,566 @@ function StaffTab() {
   )
 }
 
+/* ── Other Sales Tab ── */
+type OtherSalesForm = {
+  name: string
+  pricePerLitre: number
+  quantityOptionsText: string
+  active: boolean
+}
+
+const EMPTY_OTHER_SALES: OtherSalesForm = {
+  name: '',
+  pricePerLitre: 0,
+  quantityOptionsText: '1, 2, 3, 5',
+  active: true,
+}
+
+function parseQuantityOptions(text: string): number[] {
+  return text
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+    .map((s) => Number(s))
+    .filter((n) => Number.isFinite(n) && n > 0)
+}
+
+function OtherSalesTab() {
+  const { otherSalesItems, addOtherSalesItem, updateOtherSalesItem, deleteOtherSalesItem } = useAppStore()
+  const [modal, setModal] = useState<{ mode: 'add' | 'edit'; item?: OtherSalesItem } | null>(null)
+  const [form, setForm] = useState<OtherSalesForm>(EMPTY_OTHER_SALES)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  function openAdd() {
+    setForm(EMPTY_OTHER_SALES)
+    setError(null)
+    setModal({ mode: 'add' })
+  }
+
+  function openEdit(item: OtherSalesItem) {
+    setForm({
+      name: item.name,
+      pricePerLitre: item.pricePerLitre,
+      quantityOptionsText: item.quantityOptions.join(', '),
+      active: item.active,
+    })
+    setError(null)
+    setModal({ mode: 'edit', item })
+  }
+
+  async function handleSave() {
+    setError(null)
+    const name = form.name.trim()
+    if (!name) {
+      setError('Name is required')
+      return
+    }
+    if (!(form.pricePerLitre > 0)) {
+      setError('Price per litre must be greater than 0')
+      return
+    }
+    const quantityOptions = parseQuantityOptions(form.quantityOptionsText)
+    if (quantityOptions.length === 0) {
+      setError('Add at least one quantity option (e.g. "1, 2, 3, 5")')
+      return
+    }
+    setBusy(true)
+    try {
+      if (modal?.mode === 'add') {
+        await addOtherSalesItem({
+          name,
+          pricePerLitre: form.pricePerLitre,
+          quantityOptions,
+          active: form.active,
+        })
+      } else if (modal?.item) {
+        await updateOtherSalesItem(modal.item.id, {
+          name,
+          pricePerLitre: form.pricePerLitre,
+          quantityOptions,
+          active: form.active,
+        })
+      }
+      setModal(null)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to save item')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleDelete(item: OtherSalesItem) {
+    if (!confirm(`Delete ${item.name}?`)) return
+    try {
+      await deleteOtherSalesItem(item.id)
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to delete item')
+    }
+  }
+
+  async function toggleActive(item: OtherSalesItem) {
+    try {
+      await updateOtherSalesItem(item.id, { active: !item.active })
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to update item')
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 mb-4">
+        <p className="text-on-surface-variant text-sm max-w-xl">
+          Catalog of non-fuel items sold (e.g. Distilled Water, Oil, AdBlue). Configure name, price per litre, and quantity options.
+        </p>
+        <button
+          onClick={openAdd}
+          className="flex items-center justify-center gap-2 px-4 py-2.5 bg-secondary-container text-white rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity w-full sm:w-auto flex-shrink-0"
+        >
+          <span className="material-symbols-outlined text-[16px]">add</span>
+          Add Item
+        </button>
+      </div>
+
+      {otherSalesItems.length === 0 ? (
+        <div className="bg-surface-container-lowest rounded-xl border border-dashed border-outline-variant p-6 text-center">
+          <p className="text-on-surface-variant text-sm">No items yet. Add your first one.</p>
+        </div>
+      ) : (
+        <>
+          {/* Mobile cards */}
+          <div className="flex flex-col gap-3 sm:hidden">
+            {otherSalesItems.map((item) => (
+              <div
+                key={item.id}
+                className="bg-surface-container-lowest rounded-xl border border-outline-variant p-4 flex flex-col gap-3"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-on-surface font-semibold text-sm truncate">{item.name}</p>
+                    <p className="text-on-surface-variant text-xs mt-0.5">
+                      ₹{item.pricePerLitre.toFixed(2)} / L
+                    </p>
+                    <p className="text-on-surface-variant text-xs mt-0.5">
+                      Qty: {item.quantityOptions.join(' / ')}
+                    </p>
+                  </div>
+                  <label className="flex items-center gap-1.5 text-xs text-on-surface-variant cursor-pointer flex-shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={item.active}
+                      onChange={() => toggleActive(item)}
+                      className="size-4 rounded border-outline-variant accent-primary"
+                    />
+                    Active
+                  </label>
+                </div>
+                <div className="flex items-center gap-2 border-t border-outline-variant pt-2">
+                  <button
+                    onClick={() => openEdit(item)}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-semibold text-on-surface border border-outline-variant rounded-lg hover:bg-surface-container"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">edit</span>
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDelete(item)}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-semibold text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">delete</span>
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden sm:block bg-surface-container-lowest rounded-xl border border-outline-variant overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-surface-container">
+                <tr className="text-left text-on-surface-variant text-xs uppercase tracking-wide">
+                  <th className="py-2.5 px-4 font-semibold">Name</th>
+                  <th className="py-2.5 px-4 font-semibold">Price / L</th>
+                  <th className="py-2.5 px-4 font-semibold">Quantity Options</th>
+                  <th className="py-2.5 px-4 font-semibold">Active</th>
+                  <th className="py-2.5 px-4 font-semibold text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {otherSalesItems.map((item) => (
+                  <tr key={item.id} className="border-t border-outline-variant">
+                    <td className="py-2.5 px-4 text-on-surface font-medium">{item.name}</td>
+                    <td className="py-2.5 px-4 text-on-surface">₹{item.pricePerLitre.toFixed(2)}</td>
+                    <td className="py-2.5 px-4 text-on-surface-variant">
+                      {item.quantityOptions.join(' / ')}
+                    </td>
+                    <td className="py-2.5 px-4">
+                      <input
+                        type="checkbox"
+                        checked={item.active}
+                        onChange={() => toggleActive(item)}
+                        className="size-4 rounded border-outline-variant accent-primary cursor-pointer"
+                      />
+                    </td>
+                    <td className="py-2.5 px-4">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => openEdit(item)}
+                          className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">edit</span>
+                        </button>
+                        <button
+                          onClick={() => handleDelete(item)}
+                          className="p-2 rounded-lg text-on-surface-variant hover:bg-red-50 hover:text-red-600 transition-colors"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">delete</span>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {modal && (
+        <Modal
+          title={modal.mode === 'add' ? 'Add Other Sales Item' : 'Edit Other Sales Item'}
+          onClose={() => setModal(null)}
+        >
+          <div className="flex flex-col gap-4">
+            <Field label="Name">
+              <input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="e.g. Distilled Water"
+                className={INPUT_CLS}
+              />
+            </Field>
+            <Field label="Price per Litre (₹)">
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.pricePerLitre}
+                onChange={(e) => setForm({ ...form, pricePerLitre: Number(e.target.value) })}
+                className={INPUT_CLS}
+              />
+            </Field>
+            <Field label="Quantity Options (comma-separated)">
+              <input
+                value={form.quantityOptionsText}
+                onChange={(e) => setForm({ ...form, quantityOptionsText: e.target.value })}
+                placeholder="1, 2, 3, 5"
+                className={INPUT_CLS}
+              />
+            </Field>
+            <label className="flex items-center gap-2 text-sm text-on-surface cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.active}
+                onChange={(e) => setForm({ ...form, active: e.target.checked })}
+                className="size-4 rounded border-outline-variant accent-primary"
+              />
+              Active
+            </label>
+            {error && <p className="text-red-600 text-xs font-medium">{error}</p>}
+            <div className="flex flex-col-reverse sm:flex-row gap-3 pt-1">
+              <button
+                onClick={() => setModal(null)}
+                disabled={busy}
+                className="flex-1 py-2.5 border border-outline-variant rounded-lg text-sm font-semibold text-on-surface-variant hover:bg-surface-container disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={busy}
+                className="flex-1 py-2.5 bg-secondary-container text-white rounded-lg text-sm font-semibold hover:opacity-90 disabled:opacity-60"
+              >
+                {busy ? 'Saving…' : modal.mode === 'add' ? 'Add Item' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  )
+}
+
+/* ── Reusable simple list (Electronic Methods + Expense Categories) ── */
+type SimpleNamedItem = { id: string; name: string; active: boolean }
+
+interface SimpleNamedListTabProps<T extends SimpleNamedItem> {
+  items: T[]
+  description: string
+  singularLabel: string
+  emptyLabel: string
+  iconName: string
+  addItem: (data: Omit<T, 'id'>) => Promise<void>
+  updateItem: (id: string, data: Partial<T>) => Promise<void>
+  deleteItem: (id: string) => Promise<void>
+}
+
+function SimpleNamedListTab<T extends SimpleNamedItem>({
+  items,
+  description,
+  singularLabel,
+  emptyLabel,
+  iconName,
+  addItem,
+  updateItem,
+  deleteItem,
+}: SimpleNamedListTabProps<T>) {
+  const [modal, setModal] = useState<{ mode: 'add' | 'edit'; item?: T } | null>(null)
+  const [form, setForm] = useState<{ name: string; active: boolean }>({ name: '', active: true })
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  function openAdd() {
+    setForm({ name: '', active: true })
+    setError(null)
+    setModal({ mode: 'add' })
+  }
+
+  function openEdit(item: T) {
+    setForm({ name: item.name, active: item.active })
+    setError(null)
+    setModal({ mode: 'edit', item })
+  }
+
+  async function handleSave() {
+    setError(null)
+    const name = form.name.trim()
+    if (!name) {
+      setError('Name is required')
+      return
+    }
+    setBusy(true)
+    try {
+      if (modal?.mode === 'add') {
+        await addItem({ name, active: form.active } as Omit<T, 'id'>)
+      } else if (modal?.item) {
+        await updateItem(modal.item.id, { name, active: form.active } as Partial<T>)
+      }
+      setModal(null)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : `Failed to save ${singularLabel.toLowerCase()}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleDelete(item: T) {
+    if (!confirm(`Delete ${item.name}?`)) return
+    try {
+      await deleteItem(item.id)
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : `Failed to delete ${singularLabel.toLowerCase()}`)
+    }
+  }
+
+  async function toggleActive(item: T) {
+    try {
+      await updateItem(item.id, { active: !item.active } as Partial<T>)
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : `Failed to update ${singularLabel.toLowerCase()}`)
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 mb-4">
+        <p className="text-on-surface-variant text-sm max-w-xl">{description}</p>
+        <button
+          onClick={openAdd}
+          className="flex items-center justify-center gap-2 px-4 py-2.5 bg-secondary-container text-white rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity w-full sm:w-auto flex-shrink-0"
+        >
+          <span className="material-symbols-outlined text-[16px]">add</span>
+          Add {singularLabel}
+        </button>
+      </div>
+
+      {items.length === 0 ? (
+        <div className="bg-surface-container-lowest rounded-xl border border-dashed border-outline-variant p-6 text-center">
+          <p className="text-on-surface-variant text-sm">{emptyLabel}</p>
+        </div>
+      ) : (
+        <>
+          {/* Mobile cards */}
+          <div className="flex flex-col gap-3 sm:hidden">
+            {items.map((item) => (
+              <div
+                key={item.id}
+                className="bg-surface-container-lowest rounded-xl border border-outline-variant p-4 flex items-center justify-between gap-3"
+              >
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <div className="size-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                    <span className="material-symbols-outlined text-[18px] text-primary">{iconName}</span>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-on-surface font-semibold text-sm truncate">{item.name}</p>
+                    <label className="inline-flex items-center gap-1.5 text-xs text-on-surface-variant cursor-pointer mt-0.5">
+                      <input
+                        type="checkbox"
+                        checked={item.active}
+                        onChange={() => toggleActive(item)}
+                        className="size-3.5 rounded border-outline-variant accent-primary"
+                      />
+                      Active
+                    </label>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button
+                    onClick={() => openEdit(item)}
+                    className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">edit</span>
+                  </button>
+                  <button
+                    onClick={() => handleDelete(item)}
+                    className="p-2 rounded-lg text-on-surface-variant hover:bg-red-50 hover:text-red-600 transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">delete</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden sm:block bg-surface-container-lowest rounded-xl border border-outline-variant overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-surface-container">
+                <tr className="text-left text-on-surface-variant text-xs uppercase tracking-wide">
+                  <th className="py-2.5 px-4 font-semibold">Name</th>
+                  <th className="py-2.5 px-4 font-semibold">Active</th>
+                  <th className="py-2.5 px-4 font-semibold text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item) => (
+                  <tr key={item.id} className="border-t border-outline-variant">
+                    <td className="py-2.5 px-4 text-on-surface font-medium">{item.name}</td>
+                    <td className="py-2.5 px-4">
+                      <input
+                        type="checkbox"
+                        checked={item.active}
+                        onChange={() => toggleActive(item)}
+                        className="size-4 rounded border-outline-variant accent-primary cursor-pointer"
+                      />
+                    </td>
+                    <td className="py-2.5 px-4">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => openEdit(item)}
+                          className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">edit</span>
+                        </button>
+                        <button
+                          onClick={() => handleDelete(item)}
+                          className="p-2 rounded-lg text-on-surface-variant hover:bg-red-50 hover:text-red-600 transition-colors"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">delete</span>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {modal && (
+        <Modal
+          title={modal.mode === 'add' ? `Add ${singularLabel}` : `Edit ${singularLabel}`}
+          onClose={() => setModal(null)}
+        >
+          <div className="flex flex-col gap-4">
+            <Field label="Name">
+              <input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder={`e.g. ${singularLabel}`}
+                className={INPUT_CLS}
+                autoFocus
+              />
+            </Field>
+            <label className="flex items-center gap-2 text-sm text-on-surface cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.active}
+                onChange={(e) => setForm({ ...form, active: e.target.checked })}
+                className="size-4 rounded border-outline-variant accent-primary"
+              />
+              Active
+            </label>
+            {error && <p className="text-red-600 text-xs font-medium">{error}</p>}
+            <div className="flex flex-col-reverse sm:flex-row gap-3 pt-1">
+              <button
+                onClick={() => setModal(null)}
+                disabled={busy}
+                className="flex-1 py-2.5 border border-outline-variant rounded-lg text-sm font-semibold text-on-surface-variant hover:bg-surface-container disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={busy}
+                className="flex-1 py-2.5 bg-secondary-container text-white rounded-lg text-sm font-semibold hover:opacity-90 disabled:opacity-60"
+              >
+                {busy ? 'Saving…' : modal.mode === 'add' ? `Add ${singularLabel}` : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  )
+}
+
+/* ── Electronic Methods Tab ── */
+function ElectronicMethodsTab() {
+  const { electronicMethods, addElectronicMethod, updateElectronicMethod, deleteElectronicMethod } = useAppStore()
+  return (
+    <SimpleNamedListTab<ElectronicMethod>
+      items={electronicMethods}
+      description="Payment methods customers use (UPI, Card, Wallet, …). Salesman picks from these in close-shift form."
+      singularLabel="Method"
+      emptyLabel="No methods yet. Add your first one."
+      iconName="credit_card"
+      addItem={addElectronicMethod}
+      updateItem={updateElectronicMethod}
+      deleteItem={deleteElectronicMethod}
+    />
+  )
+}
+
+/* ── Expense Categories Tab ── */
+function ExpenseCategoriesTab() {
+  const { expenseCategories, addExpenseCategory, updateExpenseCategory, deleteExpenseCategory } = useAppStore()
+  return (
+    <SimpleNamedListTab<ExpenseCategory>
+      items={expenseCategories}
+      description="Categories for daily shift expenses (Tea/Coffee, Maintenance, …)."
+      singularLabel="Category"
+      emptyLabel="No categories yet. Add your first one."
+      iconName="receipt_long"
+      addItem={addExpenseCategory}
+      updateItem={updateExpenseCategory}
+      deleteItem={deleteExpenseCategory}
+    />
+  )
+}
+
 /* ── Fuel Prices Tab ── */
 function FuelPricesTab() {
   const { fuelPrices, updateFuelPrice } = useAppStore()
@@ -1193,14 +1776,31 @@ function FuelPricesTab() {
 }
 
 /* ── Main Settings Page ── */
+
+// Salesman is allowed to view their own profile-ish info but should not be
+// able to change shop config. Catalogs (Other Sales / Electronic / Expenses /
+// Tanks / Nozzles / DUs / Prices / Staff) are owner+manager only.
+const SALESMAN_TABS: Tab[] = ['bunk']
+
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<Tab>('bunk')
+  const role = useAuthStore((s) => s.currentUser?.role)
+  const visibleTabs = useMemo(() => {
+    if (role === 'salesman') return TABS.filter((t) => SALESMAN_TABS.includes(t.id))
+    return TABS
+  }, [role])
+
+  const [activeTab, setActiveTab] = useState<Tab>(visibleTabs[0]?.id ?? 'bunk')
+
+  // Keep activeTab inside the visible set if role changes mid-session.
+  if (!visibleTabs.some((t) => t.id === activeTab)) {
+    setActiveTab(visibleTabs[0]?.id ?? 'bunk')
+  }
 
   return (
     <div className="max-w-3xl">
       {/* Tabs — horizontal scroll on mobile, no wrap */}
       <div className="flex gap-1 bg-surface-container p-1 rounded-xl mb-6 overflow-x-auto whitespace-nowrap [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {TABS.map((tab) => (
+        {visibleTabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
@@ -1222,6 +1822,9 @@ export default function SettingsPage() {
       {activeTab === 'dispensers' && <DispenserUnitsTab />}
       {activeTab === 'tanks' && <TanksTab />}
       {activeTab === 'nozzles' && <NozzlesTab />}
+      {activeTab === 'other-sales' && <OtherSalesTab />}
+      {activeTab === 'electronic' && <ElectronicMethodsTab />}
+      {activeTab === 'expenses' && <ExpenseCategoriesTab />}
       {activeTab === 'staff' && <StaffTab />}
       {activeTab === 'prices' && <FuelPricesTab />}
     </div>

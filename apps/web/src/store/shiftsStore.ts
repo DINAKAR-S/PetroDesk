@@ -2,7 +2,19 @@ import { create } from 'zustand'
 import { supabase } from '@/lib/supabase'
 import { BUNK_ID } from '@/lib/constants'
 import { useAppStore } from '@/store/appStore'
-import type { Shift, NozzleReading, TankerDelivery, Expense, FuelType, NozzleSlot, ShiftStatus } from '@/types'
+import type {
+  Shift,
+  NozzleReading,
+  TankerDelivery,
+  Expense,
+  FuelType,
+  NozzleSlot,
+  ShiftStatus,
+  ShiftOtherSale,
+  ShiftElectronicEntry,
+  ShiftExpenseEntry,
+  ShiftCreditEntry,
+} from '@/types'
 
 export type DateFilter = 'today' | 'week' | 'month' | 'all'
 
@@ -44,6 +56,17 @@ function rowToShift(r: Record<string, unknown>): Shift {
     hsdLitres: Number(r.hsd_litres ?? 0),
     msRevenue: Number(r.ms_revenue ?? 0),
     hsdRevenue: Number(r.hsd_revenue ?? 0),
+    testingMsVolume: Number(r.testing_ms_volume ?? 0),
+    testingMsSale: Number(r.testing_ms_sale ?? 0),
+    testingHsdVolume: Number(r.testing_hsd_volume ?? 0),
+    testingHsdSale: Number(r.testing_hsd_sale ?? 0),
+    totalOtherSales: Number(r.total_other_sales ?? 0),
+    totalElectronic: Number(r.total_electronic ?? 0),
+    totalCredit: Number(r.total_credit ?? 0),
+    totalExpenses: Number(r.total_expenses ?? 0),
+    cashInHand: Number(r.cash_in_hand ?? 0),
+    handoverToNext: Number(r.handover_to_next ?? 0),
+    depositToOwner: Number(r.deposit_to_owner ?? 0),
     notes: (r.notes as string | null) ?? null,
   }
 }
@@ -65,6 +88,51 @@ function rowToReading(r: Record<string, unknown>): NozzleReading {
   }
 }
 
+function rowToOtherSale(r: Record<string, unknown>): ShiftOtherSale {
+  return {
+    id: r.id as string,
+    shiftId: r.shift_id as string,
+    itemId: (r.item_id as string | null) ?? null,
+    itemName: r.item_name as string,
+    quantity: Number(r.quantity ?? 0),
+    amount: Number(r.amount ?? 0),
+  }
+}
+
+function rowToElectronicEntry(r: Record<string, unknown>): ShiftElectronicEntry {
+  return {
+    id: r.id as string,
+    shiftId: r.shift_id as string,
+    methodId: (r.method_id as string | null) ?? null,
+    methodName: r.method_name as string,
+    amount: Number(r.amount ?? 0),
+    bankConfirmed: Boolean(r.bank_confirmed ?? false),
+    bankConfirmedAt: (r.bank_confirmed_at as string | null) ?? null,
+    bankConfirmedByUserId: (r.bank_confirmed_by_user_id as string | null) ?? null,
+  }
+}
+
+function rowToExpenseEntry(r: Record<string, unknown>): ShiftExpenseEntry {
+  return {
+    id: r.id as string,
+    shiftId: r.shift_id as string,
+    categoryId: (r.category_id as string | null) ?? null,
+    categoryName: r.category_name as string,
+    amount: Number(r.amount ?? 0),
+    description: (r.description as string | null) ?? null,
+  }
+}
+
+function rowToCreditEntry(r: Record<string, unknown>): ShiftCreditEntry {
+  return {
+    id: r.id as string,
+    shiftId: r.shift_id as string,
+    customerId: (r.customer_id as string | null) ?? null,
+    customerName: r.customer_name as string,
+    amount: Number(r.amount ?? 0),
+  }
+}
+
 export interface OpenShiftInput {
   dispenserUnitId: string
   salesmanId: string
@@ -81,12 +149,15 @@ export interface OpenShiftInput {
 
 export interface CloseShiftInput {
   shiftId: string
-  closings: {
-    nozzleId: string
-    closingCumVolume: number
-    closingCumSale: number
-  }[]
-  cashCollected: number
+  closings: { nozzleId: string; closingCumVolume: number; closingCumSale: number }[]
+  testing: { msVolume: number; msSale: number; hsdVolume: number; hsdSale: number }
+  otherSales: { itemId: string | null; itemName: string; quantity: number; amount: number }[]
+  electronic: { methodId: string | null; methodName: string; amount: number }[]
+  credit: { customerId: string | null; customerName: string; amount: number }[]
+  expenses: { categoryId: string | null; categoryName: string; amount: number; description: string | null }[]
+  cashInHand: number
+  handoverToNext: number
+  depositToOwner: number
 }
 
 export interface OpeningReading {
@@ -103,6 +174,10 @@ interface ShiftsState {
   nozzleReadings: NozzleReading[]
   deliveries: TankerDelivery[]
   expenses: Expense[]
+  otherSales: ShiftOtherSale[]
+  electronicEntries: ShiftElectronicEntry[]
+  expenseEntries: ShiftExpenseEntry[]
+  creditEntries: ShiftCreditEntry[]
   loading: boolean
   dateFilter: DateFilter
   statusFilter: 'all' | 'open' | 'closed' | 'flagged'
@@ -110,6 +185,7 @@ interface ShiftsState {
   setStatusFilter: (f: 'all' | 'open' | 'closed' | 'flagged') => void
   loadShifts: (dateFilter?: DateFilter) => Promise<void>
   loadNozzleReadings: (shiftId: string) => Promise<void>
+  loadShiftEntries: (shiftId: string) => Promise<void>
   loadDeliveries: () => Promise<void>
   loadExpenses: () => Promise<void>
   openShift: (input: OpenShiftInput) => Promise<{ shiftId: string }>
@@ -131,6 +207,10 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
   nozzleReadings: [],
   deliveries: [],
   expenses: [],
+  otherSales: [],
+  electronicEntries: [],
+  expenseEntries: [],
+  creditEntries: [],
   loading: false,
   dateFilter: 'week',
   statusFilter: 'all',
@@ -172,6 +252,38 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
         ],
       }))
     }
+  },
+
+  loadShiftEntries: async (shiftId) => {
+    const [otherRes, elecRes, expRes, credRes] = await Promise.all([
+      supabase.from('shift_other_sales').select('*').eq('shift_id', shiftId),
+      supabase.from('shift_electronic_entries').select('*').eq('shift_id', shiftId),
+      supabase.from('shift_expense_entries').select('*').eq('shift_id', shiftId),
+      supabase.from('shift_credit_entries').select('*').eq('shift_id', shiftId),
+    ])
+
+    const freshOther = otherRes.data
+      ? (otherRes.data as Record<string, unknown>[]).map(rowToOtherSale)
+      : []
+    const freshElec = elecRes.data
+      ? (elecRes.data as Record<string, unknown>[]).map(rowToElectronicEntry)
+      : []
+    const freshExp = expRes.data
+      ? (expRes.data as Record<string, unknown>[]).map(rowToExpenseEntry)
+      : []
+    const freshCred = credRes.data
+      ? (credRes.data as Record<string, unknown>[]).map(rowToCreditEntry)
+      : []
+
+    set((s) => ({
+      otherSales: [...s.otherSales.filter((x) => x.shiftId !== shiftId), ...freshOther],
+      electronicEntries: [
+        ...s.electronicEntries.filter((x) => x.shiftId !== shiftId),
+        ...freshElec,
+      ],
+      expenseEntries: [...s.expenseEntries.filter((x) => x.shiftId !== shiftId), ...freshExp],
+      creditEntries: [...s.creditEntries.filter((x) => x.shiftId !== shiftId), ...freshCred],
+    }))
   },
 
   loadDeliveries: async () => {
@@ -382,38 +494,160 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
     )
     const { totalLitresSold, totalRevenue, msLitres, hsdLitres, msRevenue, hsdRevenue } = totals
 
-    const expectedCash = totalRevenue
-    const cashVariance = input.cashCollected - expectedCash
-    const closedAt = new Date().toISOString()
+    // Phase 2 section totals.
+    const totalOtherSales = input.otherSales.reduce((sum, x) => sum + x.amount, 0)
+    const totalElectronic = input.electronic.reduce((sum, x) => sum + x.amount, 0)
+    const totalCredit = input.credit.reduce((sum, x) => sum + x.amount, 0)
+    const totalExpenses = input.expenses.reduce((sum, x) => sum + x.amount, 0)
+    const testingTotalSale = input.testing.msSale + input.testing.hsdSale
+    const testingTotalVolume = input.testing.msVolume + input.testing.hsdVolume
 
-    const { error: updErr } = await supabase
-      .from('shifts')
-      .update({
-        status: 'closed',
-        closed_at: closedAt,
-        total_litres_sold: totalLitresSold,
-        total_revenue: totalRevenue,
-        total_cash_collected: input.cashCollected,
-        expected_cash: expectedCash,
-        cash_variance: cashVariance,
-        ms_litres: msLitres,
-        hsd_litres: hsdLitres,
-        ms_revenue: msRevenue,
-        hsd_revenue: hsdRevenue,
-      })
-      .eq('id', input.shiftId)
-
-    if (updErr) {
-      throw new Error(updErr.message)
+    // Testing must not exceed what was actually pumped. Otherwise we'd write
+    // negative adjusted revenue / litres and produce nonsense reports.
+    if (input.testing.msVolume > msLitres) {
+      throw new Error(`Petrol testing volume (${input.testing.msVolume} L) exceeds pumped petrol (${msLitres} L)`)
+    }
+    if (input.testing.hsdVolume > hsdLitres) {
+      throw new Error(`Diesel testing volume (${input.testing.hsdVolume} L) exceeds pumped diesel (${hsdLitres} L)`)
+    }
+    if (input.testing.msSale > msRevenue) {
+      throw new Error(`Petrol testing sale (₹${input.testing.msSale}) exceeds pumped petrol revenue (₹${msRevenue})`)
+    }
+    if (input.testing.hsdSale > hsdRevenue) {
+      throw new Error(`Diesel testing sale (₹${input.testing.hsdSale}) exceeds pumped diesel revenue (₹${hsdRevenue})`)
     }
 
-    // Tank stock decrement: aggregate litres per tank via nozzle.tank_id lookup.
+    // Adjust nozzle aggregates for testing draws — keep MS/HSD per-fuel
+    // values pre-adjustment (they're a record of pumped litres). Top-line
+    // shift totals reflect customer-sold quantity only.
+    const adjustedTotalLitres = totalLitresSold - testingTotalVolume
+    const adjustedRevenue = totalRevenue - testingTotalSale
+
+    const expectedCash =
+      adjustedRevenue + totalOtherSales - totalElectronic - totalCredit - totalExpenses
+    const cashVariance = input.cashInHand - expectedCash
+    const closedAt = new Date().toISOString()
+
+    // Idempotent retry: if a previous close attempt inserted some child rows
+    // before failing, wipe them so we don't duplicate on this attempt.
+    // The shift is still 'open' here (the status flip happens at the end)
+    // so it's safe to clear and re-insert. Order matters: customer_ledger
+    // first because it references shift_credit_entries indirectly via shift_id.
+    {
+      const cleanups = await Promise.all([
+        supabase.from('customer_ledger').delete().eq('shift_id', input.shiftId).eq('entry_type', 'credit_taken'),
+        supabase.from('shift_other_sales').delete().eq('shift_id', input.shiftId),
+        supabase.from('shift_electronic_entries').delete().eq('shift_id', input.shiftId),
+        supabase.from('shift_expense_entries').delete().eq('shift_id', input.shiftId),
+        supabase.from('shift_credit_entries').delete().eq('shift_id', input.shiftId),
+      ])
+      for (const c of cleanups) {
+        if (c.error) throw new Error(`Failed to clear previous attempt: ${c.error.message}`)
+      }
+    }
+
+    // Insert child rows BEFORE flipping shift status — if any insert fails,
+    // the shift remains 'open' and the UI can retry (idempotent via the wipe above).
+    const insertedOtherSales: ShiftOtherSale[] = []
+    if (input.otherSales.length > 0) {
+      const payload = input.otherSales.map((x) => ({
+        shift_id: input.shiftId,
+        item_id: x.itemId,
+        item_name: x.itemName,
+        quantity: x.quantity,
+        amount: x.amount,
+      }))
+      const { data, error } = await supabase.from('shift_other_sales').insert(payload).select()
+      if (error) throw new Error(error.message)
+      if (data) {
+        for (const row of data as Record<string, unknown>[]) {
+          insertedOtherSales.push(rowToOtherSale(row))
+        }
+      }
+    }
+
+    const insertedElectronic: ShiftElectronicEntry[] = []
+    if (input.electronic.length > 0) {
+      const payload = input.electronic.map((x) => ({
+        shift_id: input.shiftId,
+        method_id: x.methodId,
+        method_name: x.methodName,
+        amount: x.amount,
+        bank_confirmed: false,
+        bank_confirmed_at: null,
+        bank_confirmed_by_user_id: null,
+      }))
+      const { data, error } = await supabase.from('shift_electronic_entries').insert(payload).select()
+      if (error) throw new Error(error.message)
+      if (data) {
+        for (const row of data as Record<string, unknown>[]) {
+          insertedElectronic.push(rowToElectronicEntry(row))
+        }
+      }
+    }
+
+    const insertedExpenses: ShiftExpenseEntry[] = []
+    if (input.expenses.length > 0) {
+      const payload = input.expenses.map((x) => ({
+        shift_id: input.shiftId,
+        category_id: x.categoryId,
+        category_name: x.categoryName,
+        amount: x.amount,
+        description: x.description,
+      }))
+      const { data, error } = await supabase.from('shift_expense_entries').insert(payload).select()
+      if (error) throw new Error(error.message)
+      if (data) {
+        for (const row of data as Record<string, unknown>[]) {
+          insertedExpenses.push(rowToExpenseEntry(row))
+        }
+      }
+    }
+
+    const insertedCredit: ShiftCreditEntry[] = []
+    if (input.credit.length > 0) {
+      const payload = input.credit.map((x) => ({
+        shift_id: input.shiftId,
+        customer_id: x.customerId,
+        customer_name: x.customerName,
+        amount: x.amount,
+      }))
+      const { data, error } = await supabase.from('shift_credit_entries').insert(payload).select()
+      if (error) throw new Error(error.message)
+      if (data) {
+        for (const row of data as Record<string, unknown>[]) {
+          insertedCredit.push(rowToCreditEntry(row))
+        }
+      }
+    }
+
+    // Customer ledger entries — only for credit rows that reference a
+    // persisted customer. Ad-hoc names (customerId === null) skip the ledger.
+    const ledgerPayload = input.credit
+      .filter((x) => x.customerId !== null)
+      .map((x) => ({
+        customer_id: x.customerId,
+        shift_id: input.shiftId,
+        entry_type: 'credit_taken',
+        amount: x.amount,
+        notes: null,
+      }))
+    if (ledgerPayload.length > 0) {
+      const { error } = await supabase.from('customer_ledger').insert(ledgerPayload)
+      if (error) throw new Error(error.message)
+    }
+
+    // Tank stock decrement runs BEFORE the status flip. If a tank update
+    // fails, the shift stays 'open' so the user can retry without producing
+    // a closed-but-stock-not-decremented shift that has no recovery path.
     const nozzleIds = updates.map((u) => u.nozzleId)
     if (nozzleIds.length > 0) {
-      const { data: nozzleRows } = await supabase
+      const { data: nozzleRows, error: nozzlesErr } = await supabase
         .from('nozzles')
         .select('id, tank_id')
         .in('id', nozzleIds)
+
+      if (nozzlesErr) throw new Error(`Failed to look up nozzle tanks: ${nozzlesErr.message}`)
 
       if (nozzleRows) {
         const nozzleToTank = new Map<string, string>()
@@ -435,6 +669,40 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
       }
     }
 
+    // Status flip is the LAST DB write. Once the shift is 'closed',
+    // the status guard at the top blocks any further closeShift on this id.
+    const { error: updErr } = await supabase
+      .from('shifts')
+      .update({
+        status: 'closed',
+        closed_at: closedAt,
+        total_litres_sold: adjustedTotalLitres,
+        total_revenue: adjustedRevenue,
+        total_cash_collected: input.cashInHand,
+        expected_cash: expectedCash,
+        cash_variance: cashVariance,
+        ms_litres: msLitres,
+        hsd_litres: hsdLitres,
+        ms_revenue: msRevenue,
+        hsd_revenue: hsdRevenue,
+        testing_ms_volume: input.testing.msVolume,
+        testing_ms_sale: input.testing.msSale,
+        testing_hsd_volume: input.testing.hsdVolume,
+        testing_hsd_sale: input.testing.hsdSale,
+        total_other_sales: totalOtherSales,
+        total_electronic: totalElectronic,
+        total_credit: totalCredit,
+        total_expenses: totalExpenses,
+        cash_in_hand: input.cashInHand,
+        handover_to_next: input.handoverToNext,
+        deposit_to_owner: input.depositToOwner,
+      })
+      .eq('id', input.shiftId)
+
+    if (updErr) {
+      throw new Error(updErr.message)
+    }
+
     set((s) => ({
       shifts: s.shifts.map((sh) =>
         sh.id === input.shiftId
@@ -442,15 +710,26 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
               ...sh,
               status: 'closed' as const,
               closedAt,
-              totalLitresSold,
-              totalRevenue,
-              totalCashCollected: input.cashCollected,
+              totalLitresSold: adjustedTotalLitres,
+              totalRevenue: adjustedRevenue,
+              totalCashCollected: input.cashInHand,
               expectedCash,
               cashVariance,
               msLitres,
               hsdLitres,
               msRevenue,
               hsdRevenue,
+              testingMsVolume: input.testing.msVolume,
+              testingMsSale: input.testing.msSale,
+              testingHsdVolume: input.testing.hsdVolume,
+              testingHsdSale: input.testing.hsdSale,
+              totalOtherSales,
+              totalElectronic,
+              totalCredit,
+              totalExpenses,
+              cashInHand: input.cashInHand,
+              handoverToNext: input.handoverToNext,
+              depositToOwner: input.depositToOwner,
             }
           : sh,
       ),
@@ -465,6 +744,22 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
           rupeesSold: u.rupeesSold,
         }
       }),
+      otherSales: [
+        ...s.otherSales.filter((x) => x.shiftId !== input.shiftId),
+        ...insertedOtherSales,
+      ],
+      electronicEntries: [
+        ...s.electronicEntries.filter((x) => x.shiftId !== input.shiftId),
+        ...insertedElectronic,
+      ],
+      expenseEntries: [
+        ...s.expenseEntries.filter((x) => x.shiftId !== input.shiftId),
+        ...insertedExpenses,
+      ],
+      creditEntries: [
+        ...s.creditEntries.filter((x) => x.shiftId !== input.shiftId),
+        ...insertedCredit,
+      ],
     }))
   },
 

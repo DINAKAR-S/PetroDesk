@@ -65,7 +65,87 @@ export interface Shift {
   hsdLitres: number
   msRevenue: number
   hsdRevenue: number
+  // Phase 2: section totals stored on the shift for fast reporting
+  testingMsVolume: number
+  testingMsSale: number
+  testingHsdVolume: number
+  testingHsdSale: number
+  totalOtherSales: number
+  totalElectronic: number
+  totalCredit: number
+  totalExpenses: number
+  cashInHand: number
+  handoverToNext: number
+  depositToOwner: number
   notes: string | null
+}
+
+// ─── Phase 2 catalogs (configured in Settings) ──────────────
+
+export interface OtherSalesItem {
+  id: string
+  name: string
+  pricePerLitre: number
+  quantityOptions: number[]
+  active: boolean
+}
+
+export interface ElectronicMethod {
+  id: string
+  name: string
+  active: boolean
+}
+
+export interface ExpenseCategory {
+  id: string
+  name: string
+  active: boolean
+}
+
+export interface Customer {
+  id: string
+  name: string
+  phone: string | null
+  notes: string | null
+}
+
+// ─── Phase 2 per-shift entries ──────────────────────────────
+
+export interface ShiftOtherSale {
+  id: string
+  shiftId: string
+  itemId: string | null
+  itemName: string
+  quantity: number
+  amount: number
+}
+
+export interface ShiftElectronicEntry {
+  id: string
+  shiftId: string
+  methodId: string | null
+  methodName: string
+  amount: number
+  bankConfirmed: boolean
+  bankConfirmedAt: string | null
+  bankConfirmedByUserId: string | null
+}
+
+export interface ShiftExpenseEntry {
+  id: string
+  shiftId: string
+  categoryId: string | null
+  categoryName: string
+  amount: number
+  description: string | null
+}
+
+export interface ShiftCreditEntry {
+  id: string
+  shiftId: string
+  customerId: string | null
+  customerName: string
+  amount: number
 }
 
 export interface NozzleReading {

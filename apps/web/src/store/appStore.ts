@@ -1,7 +1,19 @@
 import { create } from 'zustand'
 import { supabase } from '@/lib/supabase'
 import { BUNK_ID } from '@/lib/constants'
-import type { BunkProfile, Tank, Nozzle, NozzleSlot, User, FuelPrice, DispenserUnit } from '@/types'
+import type {
+  BunkProfile,
+  Tank,
+  Nozzle,
+  NozzleSlot,
+  User,
+  FuelPrice,
+  DispenserUnit,
+  OtherSalesItem,
+  ElectronicMethod,
+  ExpenseCategory,
+  Customer,
+} from '@/types'
 
 interface AppState {
   bunk: BunkProfile
@@ -10,6 +22,10 @@ interface AppState {
   dispenserUnits: DispenserUnit[]
   users: User[]
   fuelPrices: FuelPrice[]
+  otherSalesItems: OtherSalesItem[]
+  electronicMethods: ElectronicMethod[]
+  expenseCategories: ExpenseCategory[]
+  customers: Customer[]
   loading: boolean
   loadAll: () => Promise<void>
   loadDispenserUnits: () => Promise<void>
@@ -28,6 +44,17 @@ interface AppState {
   deleteUser: (id: string) => Promise<void>
   updateTankStock: (tankId: string, delta: number) => Promise<void>
   updateFuelPrice: (id: string, pricePerLitre: number) => Promise<void>
+  addOtherSalesItem: (item: Omit<OtherSalesItem, 'id'>) => Promise<void>
+  updateOtherSalesItem: (id: string, data: Partial<OtherSalesItem>) => Promise<void>
+  deleteOtherSalesItem: (id: string) => Promise<void>
+  addElectronicMethod: (method: Omit<ElectronicMethod, 'id'>) => Promise<void>
+  updateElectronicMethod: (id: string, data: Partial<ElectronicMethod>) => Promise<void>
+  deleteElectronicMethod: (id: string) => Promise<void>
+  addExpenseCategory: (category: Omit<ExpenseCategory, 'id'>) => Promise<void>
+  updateExpenseCategory: (id: string, data: Partial<ExpenseCategory>) => Promise<void>
+  deleteExpenseCategory: (id: string) => Promise<void>
+  addCustomer: (customer: Omit<Customer, 'id'>) => Promise<Customer>
+  findOrCreateCustomerByName: (name: string, phone: string | null) => Promise<Customer>
 }
 
 const FALLBACK_BUNK: BunkProfile = {
@@ -44,18 +71,37 @@ export const useAppStore = create<AppState>((set, get) => ({
   dispenserUnits: [],
   users: [],
   fuelPrices: [],
+  otherSalesItems: [],
+  electronicMethods: [],
+  expenseCategories: [],
+  customers: [],
   loading: false,
 
   loadAll: async () => {
     set({ loading: true })
     try {
-      const [bunkRes, tanksRes, nozzlesRes, dispenserUnitsRes, staffRes, pricesRes] = await Promise.all([
+      const [
+        bunkRes,
+        tanksRes,
+        nozzlesRes,
+        dispenserUnitsRes,
+        staffRes,
+        pricesRes,
+        otherSalesItemsRes,
+        electronicMethodsRes,
+        expenseCategoriesRes,
+        customersRes,
+      ] = await Promise.all([
         supabase.from('bunks').select('*').eq('id', BUNK_ID).single(),
         supabase.from('tanks').select('*').eq('bunk_id', BUNK_ID).order('created_at'),
         supabase.from('nozzles').select('*').eq('bunk_id', BUNK_ID).order('dispenser_unit_id').order('slot'),
         supabase.from('dispenser_units').select('*').eq('bunk_id', BUNK_ID).order('number'),
         supabase.from('staff').select('*').eq('bunk_id', BUNK_ID).order('created_at'),
         supabase.from('fuel_prices').select('*').eq('bunk_id', BUNK_ID),
+        supabase.from('other_sales_items').select('*').eq('bunk_id', BUNK_ID).order('created_at'),
+        supabase.from('electronic_methods').select('*').eq('bunk_id', BUNK_ID).order('created_at'),
+        supabase.from('expense_categories').select('*').eq('bunk_id', BUNK_ID).order('created_at'),
+        supabase.from('customers').select('*').eq('bunk_id', BUNK_ID).order('created_at'),
       ])
 
       if (bunkRes.data) {
@@ -118,6 +164,52 @@ export const useAppStore = create<AppState>((set, get) => ({
             id: p.id as string,
             fuelType: p.fuel_type as 'MS' | 'HSD',
             pricePerLitre: Number(p.price_per_litre),
+          })),
+        })
+      }
+
+      if (otherSalesItemsRes.data) {
+        set({
+          otherSalesItems: otherSalesItemsRes.data.map((r: Record<string, unknown>) => {
+            const qo = r.quantity_options
+            return {
+              id: r.id as string,
+              name: r.name as string,
+              pricePerLitre: Number(r.price_per_litre),
+              quantityOptions: Array.isArray(qo) ? (qo as number[]) : [],
+              active: Boolean(r.active),
+            }
+          }),
+        })
+      }
+
+      if (electronicMethodsRes.data) {
+        set({
+          electronicMethods: electronicMethodsRes.data.map((r: Record<string, unknown>) => ({
+            id: r.id as string,
+            name: r.name as string,
+            active: Boolean(r.active),
+          })),
+        })
+      }
+
+      if (expenseCategoriesRes.data) {
+        set({
+          expenseCategories: expenseCategoriesRes.data.map((r: Record<string, unknown>) => ({
+            id: r.id as string,
+            name: r.name as string,
+            active: Boolean(r.active),
+          })),
+        })
+      }
+
+      if (customersRes.data) {
+        set({
+          customers: customersRes.data.map((r: Record<string, unknown>) => ({
+            id: r.id as string,
+            name: r.name as string,
+            phone: (r.phone as string | null) ?? null,
+            notes: (r.notes as string | null) ?? null,
           })),
         })
       }
@@ -375,5 +467,206 @@ export const useAppStore = create<AppState>((set, get) => ({
     const newStock = Math.max(0, tank.currentStockL + delta)
     set((s) => ({ tanks: s.tanks.map((t) => (t.id === tankId ? { ...t, currentStockL: newStock } : t)) }))
     await supabase.from('tanks').update({ current_stock_l: newStock }).eq('id', tankId)
+  },
+
+  addOtherSalesItem: async (item) => {
+    const { data, error } = await supabase.from('other_sales_items').insert({
+      bunk_id: BUNK_ID,
+      name: item.name,
+      price_per_litre: item.pricePerLitre,
+      quantity_options: item.quantityOptions,
+      active: item.active,
+    }).select().single()
+    if (error) {
+      throw new Error(error.message)
+    }
+    if (!data) {
+      throw new Error('Other sales item insert returned no row')
+    }
+    const qo = (data as Record<string, unknown>).quantity_options
+    const created: OtherSalesItem = {
+      id: data.id as string,
+      name: data.name as string,
+      pricePerLitre: Number(data.price_per_litre),
+      quantityOptions: Array.isArray(qo) ? (qo as number[]) : [],
+      active: Boolean(data.active),
+    }
+    set((s) => ({ otherSalesItems: [...s.otherSalesItems, created] }))
+  },
+
+  updateOtherSalesItem: async (id, data) => {
+    set((s) => ({
+      otherSalesItems: s.otherSalesItems.map((i) => (i.id === id ? { ...i, ...data } : i)),
+    }))
+    const payload: Record<string, unknown> = {}
+    if (data.name !== undefined) payload.name = data.name
+    if (data.pricePerLitre !== undefined) payload.price_per_litre = data.pricePerLitre
+    if (data.quantityOptions !== undefined) payload.quantity_options = data.quantityOptions
+    if (data.active !== undefined) payload.active = data.active
+    const { error } = await supabase.from('other_sales_items').update(payload).eq('id', id)
+    if (error) {
+      throw new Error(error.message)
+    }
+  },
+
+  deleteOtherSalesItem: async (id) => {
+    // Soft delete: set active=false. A hard delete would FK-fail when any
+    // closed shift's `shift_other_sales` rows still reference this item.
+    // Active=false hides it from new shift dropdowns; historical data stays intact.
+    const previous = get().otherSalesItems
+    set((s) => ({ otherSalesItems: s.otherSalesItems.filter((i) => i.id !== id) }))
+    const { error } = await supabase
+      .from('other_sales_items')
+      .update({ active: false })
+      .eq('id', id)
+    if (error) {
+      set({ otherSalesItems: previous })
+      throw new Error(error.message)
+    }
+  },
+
+  addElectronicMethod: async (method) => {
+    const { data, error } = await supabase.from('electronic_methods').insert({
+      bunk_id: BUNK_ID,
+      name: method.name,
+      active: method.active,
+    }).select().single()
+    if (error) {
+      throw new Error(error.message)
+    }
+    if (!data) {
+      throw new Error('Electronic method insert returned no row')
+    }
+    const created: ElectronicMethod = {
+      id: data.id as string,
+      name: data.name as string,
+      active: Boolean(data.active),
+    }
+    set((s) => ({ electronicMethods: [...s.electronicMethods, created] }))
+  },
+
+  updateElectronicMethod: async (id, data) => {
+    set((s) => ({
+      electronicMethods: s.electronicMethods.map((m) => (m.id === id ? { ...m, ...data } : m)),
+    }))
+    const payload: Record<string, unknown> = {}
+    if (data.name !== undefined) payload.name = data.name
+    if (data.active !== undefined) payload.active = data.active
+    const { error } = await supabase.from('electronic_methods').update(payload).eq('id', id)
+    if (error) {
+      throw new Error(error.message)
+    }
+  },
+
+  deleteElectronicMethod: async (id) => {
+    // Soft delete: see deleteOtherSalesItem for rationale.
+    const previous = get().electronicMethods
+    set((s) => ({ electronicMethods: s.electronicMethods.filter((m) => m.id !== id) }))
+    const { error } = await supabase
+      .from('electronic_methods')
+      .update({ active: false })
+      .eq('id', id)
+    if (error) {
+      set({ electronicMethods: previous })
+      throw new Error(error.message)
+    }
+  },
+
+  addExpenseCategory: async (category) => {
+    const { data, error } = await supabase.from('expense_categories').insert({
+      bunk_id: BUNK_ID,
+      name: category.name,
+      active: category.active,
+    }).select().single()
+    if (error) {
+      throw new Error(error.message)
+    }
+    if (!data) {
+      throw new Error('Expense category insert returned no row')
+    }
+    const created: ExpenseCategory = {
+      id: data.id as string,
+      name: data.name as string,
+      active: Boolean(data.active),
+    }
+    set((s) => ({ expenseCategories: [...s.expenseCategories, created] }))
+  },
+
+  updateExpenseCategory: async (id, data) => {
+    set((s) => ({
+      expenseCategories: s.expenseCategories.map((c) => (c.id === id ? { ...c, ...data } : c)),
+    }))
+    const payload: Record<string, unknown> = {}
+    if (data.name !== undefined) payload.name = data.name
+    if (data.active !== undefined) payload.active = data.active
+    const { error } = await supabase.from('expense_categories').update(payload).eq('id', id)
+    if (error) {
+      throw new Error(error.message)
+    }
+  },
+
+  deleteExpenseCategory: async (id) => {
+    // Soft delete: see deleteOtherSalesItem for rationale.
+    const previous = get().expenseCategories
+    set((s) => ({ expenseCategories: s.expenseCategories.filter((c) => c.id !== id) }))
+    const { error } = await supabase
+      .from('expense_categories')
+      .update({ active: false })
+      .eq('id', id)
+    if (error) {
+      set({ expenseCategories: previous })
+      throw new Error(error.message)
+    }
+  },
+
+  addCustomer: async (customer) => {
+    const { data, error } = await supabase.from('customers').insert({
+      bunk_id: BUNK_ID,
+      name: customer.name,
+      phone: customer.phone,
+      notes: customer.notes,
+    }).select().single()
+    if (error) {
+      throw new Error(error.message)
+    }
+    if (!data) {
+      throw new Error('Customer insert returned no row')
+    }
+    const created: Customer = {
+      id: data.id as string,
+      name: data.name as string,
+      phone: (data.phone as string | null) ?? null,
+      notes: (data.notes as string | null) ?? null,
+    }
+    set((s) => ({ customers: [...s.customers, created] }))
+    return created
+  },
+
+  findOrCreateCustomerByName: async (name, phone) => {
+    const { data, error } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('bunk_id', BUNK_ID)
+      .ilike('name', name)
+      .limit(1)
+    if (error) {
+      throw new Error(error.message)
+    }
+    if (data && data.length > 0) {
+      const r = data[0] as Record<string, unknown>
+      const found: Customer = {
+        id: r.id as string,
+        name: r.name as string,
+        phone: (r.phone as string | null) ?? null,
+        notes: (r.notes as string | null) ?? null,
+      }
+      // Make sure the in-memory cache reflects this customer (in case loadAll hasn't seen it yet)
+      const exists = get().customers.some((c) => c.id === found.id)
+      if (!exists) {
+        set((s) => ({ customers: [...s.customers, found] }))
+      }
+      return found
+    }
+    return await get().addCustomer({ name, phone, notes: null })
   },
 }))
