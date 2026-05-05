@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useShiftsStore, type DateFilter } from '@/store/shiftsStore'
 import { useAppStore } from '@/store/appStore'
 import { cn } from '@/lib/utils'
-import { FUEL_LABELS, VAT_RATES, EXPENSE_CATEGORIES } from '@/lib/constants'
+import { FUEL_LABELS, VAT_RATES, FUEL_TYPES, EXPENSE_CATEGORIES } from '@/lib/constants'
 import type { TankerDelivery, Expense, FuelType } from '@/types'
 
 type Tab = 'daily' | 'tax' | 'deliveries' | 'expenses'
@@ -201,18 +201,20 @@ export default function ReportsPage() {
   const totalRevenue = closedShifts.reduce((sum, s) => sum + s.totalCashCollected, 0)
   const totalLitres = closedShifts.reduce((sum, s) => sum + s.totalLitresSold, 0)
 
-  const msLitresTotal = closedShifts.reduce((sum, s) => sum + s.msLitres, 0)
-  const hsdLitresTotal = closedShifts.reduce((sum, s) => sum + s.hsdLitres, 0)
-  const xpLitresTotal = closedShifts.reduce((sum, s) => sum + s.xpLitres, 0)
-  const msRevenueTotal = closedShifts.reduce((sum, s) => sum + s.msRevenue, 0)
-  const hsdRevenueTotal = closedShifts.reduce((sum, s) => sum + s.hsdRevenue, 0)
-  const xpRevenueTotal = closedShifts.reduce((sum, s) => sum + s.xpRevenue, 0)
+  const litresByFuel: Record<FuelType, number> = {
+    MS: closedShifts.reduce((sum, s) => sum + s.msLitres, 0),
+    HSD: closedShifts.reduce((sum, s) => sum + s.hsdLitres, 0),
+  }
+  const revenueByFuel: Record<FuelType, number> = {
+    MS: closedShifts.reduce((sum, s) => sum + s.msRevenue, 0),
+    HSD: closedShifts.reduce((sum, s) => sum + s.hsdRevenue, 0),
+  }
 
-  const fuelBreakdown: { fuelType: FuelType; litres: number; revenue: number }[] = [
-    { fuelType: 'MS', litres: msLitresTotal, revenue: msRevenueTotal },
-    { fuelType: 'HSD', litres: hsdLitresTotal, revenue: hsdRevenueTotal },
-    { fuelType: 'XP', litres: xpLitresTotal, revenue: xpRevenueTotal },
-  ]
+  const fuelBreakdown: { fuelType: FuelType; litres: number; revenue: number }[] = FUEL_TYPES.map((ft) => ({
+    fuelType: ft,
+    litres: litresByFuel[ft],
+    revenue: revenueByFuel[ft],
+  }))
 
   const totalVat = fuelBreakdown.reduce((sum, fb) => {
     const rate = VAT_RATES[fb.fuelType]
@@ -233,7 +235,6 @@ export default function ReportsPage() {
   const deliverySummaryMap: Record<FuelType, { quantity: number; amount: number }> = {
     MS: { quantity: 0, amount: 0 },
     HSD: { quantity: 0, amount: 0 },
-    XP: { quantity: 0, amount: 0 },
   }
   for (const d of deliveries) {
     deliverySummaryMap[d.fuelType].quantity += d.quantityL
@@ -504,7 +505,7 @@ export default function ReportsPage() {
             <section>
               <h3 className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider mb-3">Delivery Summary</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-                {(['MS', 'HSD', 'XP'] as FuelType[]).map((ft) => (
+                {FUEL_TYPES.map((ft) => (
                   <div key={ft} className="bg-surface-container-lowest p-4 rounded-xl border border-outline-variant shadow-sm">
                     <p className="text-on-surface-variant text-sm font-medium">{FUEL_LABELS[ft]}</p>
                     <p className="text-on-surface text-lg font-bold mt-1">{deliverySummaryMap[ft].quantity.toLocaleString('en-IN')} L</p>

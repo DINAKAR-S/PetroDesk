@@ -1,6 +1,7 @@
 export type Role = 'owner' | 'manager' | 'salesman'
-export type FuelType = 'MS' | 'HSD' | 'XP'
+export type FuelType = 'MS' | 'HSD'
 export type ShiftStatus = 'open' | 'closed' | 'flagged'
+export type NozzleSlot = 1 | 2 | 3 | 4
 
 export interface User {
   id: string
@@ -26,12 +27,19 @@ export interface Tank {
   currentStockL: number
 }
 
+export interface DispenserUnit {
+  id: string
+  number: string
+  displayName: string
+}
+
 export interface Nozzle {
   id: string
   name: string
+  dispenserUnitId: string
   tankId: string
+  slot: NozzleSlot
   fuelType: FuelType
-  currentMeterReading: number
 }
 
 export interface FuelPrice {
@@ -42,22 +50,21 @@ export interface FuelPrice {
 
 export interface Shift {
   id: string
+  dispenserUnitId: string
   salesmanId: string
   salesmanName: string
   openedAt: string
   closedAt: string | null
   status: ShiftStatus
   totalLitresSold: number
+  totalRevenue: number
   totalCashCollected: number
   expectedCash: number
   cashVariance: number
-  dipVariancePct: number
   msLitres: number
   hsdLitres: number
-  xpLitres: number
   msRevenue: number
   hsdRevenue: number
-  xpRevenue: number
   notes: string | null
 }
 
@@ -67,9 +74,13 @@ export interface NozzleReading {
   nozzleId: string
   nozzleName: string
   fuelType: FuelType
-  openingReading: number
-  closingReading: number | null
+  slot: NozzleSlot
+  openingCumVolume: number
+  openingCumSale: number
+  closingCumVolume: number | null
+  closingCumSale: number | null
   litresSold: number
+  rupeesSold: number
 }
 
 export interface TankerDelivery {

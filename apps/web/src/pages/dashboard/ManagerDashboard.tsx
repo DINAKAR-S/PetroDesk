@@ -47,7 +47,7 @@ export default function ManagerDashboard() {
 
   const activeShifts = shifts.filter((s) => s.status === 'open')
 
-  const salesmanMap = new Map<string, { name: string; count: number; litres: number; revenue: number; cashVariances: number[]; worstDip: number }>()
+  const salesmanMap = new Map<string, { name: string; count: number; litres: number; revenue: number; cashVariances: number[] }>()
   for (const s of filteredShifts) {
     const existing = salesmanMap.get(s.salesmanId)
     if (existing) {
@@ -55,7 +55,6 @@ export default function ManagerDashboard() {
       existing.litres += s.totalLitresSold
       existing.revenue += s.totalCashCollected
       existing.cashVariances.push(s.cashVariance)
-      if (s.dipVariancePct > existing.worstDip) existing.worstDip = s.dipVariancePct
     } else {
       salesmanMap.set(s.salesmanId, {
         name: s.salesmanName,
@@ -63,7 +62,6 @@ export default function ManagerDashboard() {
         litres: s.totalLitresSold,
         revenue: s.totalCashCollected,
         cashVariances: [s.cashVariance],
-        worstDip: s.dipVariancePct,
       })
     }
   }
@@ -173,14 +171,6 @@ export default function ManagerDashboard() {
                         {avgVariance > 0 ? '+' : ''}₹{Math.round(avgVariance).toLocaleString('en-IN')}
                       </p>
                     </div>
-                    <div>
-                      <p className="text-xs text-on-surface-variant">Worst DIP%</p>
-                      {row.worstDip > 0 ? (
-                        <p className={cn('font-medium', row.worstDip > 2 ? 'text-red-600' : row.worstDip > 0.5 ? 'text-amber-600' : 'text-emerald-600')}>
-                          {row.worstDip}%
-                        </p>
-                      ) : <p className="text-on-surface-variant">—</p>}
-                    </div>
                   </div>
                 </div>
               )
@@ -192,14 +182,14 @@ export default function ManagerDashboard() {
           <table className="w-full text-sm">
             <thead className="bg-surface-container-low border-b border-outline-variant">
               <tr>
-                {['Salesman', 'Shifts', 'Total Litres', 'Total Revenue', 'Avg Cash Variance', 'Worst DIP%'].map((h) => (
+                {['Salesman', 'Shifts', 'Total Litres', 'Total Revenue', 'Avg Cash Variance'].map((h) => (
                   <th key={h} className="text-left px-5 py-3 text-on-surface-variant font-semibold text-xs uppercase tracking-wider whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {teamRows.length === 0 ? (
-                <tr><td colSpan={6} className="px-5 py-8 text-center text-on-surface-variant text-sm">No data</td></tr>
+                <tr><td colSpan={5} className="px-5 py-8 text-center text-on-surface-variant text-sm">No data</td></tr>
               ) : (
                 teamRows.map((row, i) => {
                   const avgVariance = row.cashVariances.length > 0
@@ -215,13 +205,6 @@ export default function ManagerDashboard() {
                         <span className={cn('font-medium', avgVariance < 0 ? 'text-rose-600' : avgVariance > 0 ? 'text-emerald-600' : 'text-on-surface-variant')}>
                           {avgVariance > 0 ? '+' : ''}₹{Math.round(avgVariance).toLocaleString('en-IN')}
                         </span>
-                      </td>
-                      <td className="px-5 py-3 text-right">
-                        {row.worstDip > 0 ? (
-                          <span className={cn('font-medium', row.worstDip > 2 ? 'text-red-600' : row.worstDip > 0.5 ? 'text-amber-600' : 'text-emerald-600')}>
-                            {row.worstDip}%
-                          </span>
-                        ) : <span className="text-on-surface-variant">—</span>}
                       </td>
                     </tr>
                   )
@@ -326,14 +309,6 @@ export default function ManagerDashboard() {
                           </p>
                         ) : <p className="text-on-surface-variant">—</p>}
                       </div>
-                      <div>
-                        <p className="text-xs text-on-surface-variant">DIP Var%</p>
-                        {shift.dipVariancePct > 0 ? (
-                          <p className={cn('font-medium', shift.dipVariancePct > 2 ? 'text-red-600' : shift.dipVariancePct > 0.5 ? 'text-amber-600' : 'text-emerald-600')}>
-                            {shift.dipVariancePct}%
-                          </p>
-                        ) : <p className="text-on-surface-variant">—</p>}
-                      </div>
                     </div>
                   </div>
                 ))
@@ -344,14 +319,14 @@ export default function ManagerDashboard() {
               <table className="w-full text-sm">
                 <thead className="bg-surface-container-low border-b border-outline-variant">
                   <tr>
-                    {['Salesman', 'Date', 'Litres', 'Revenue', 'Cash Variance', 'DIP Var%', 'Status'].map((h) => (
+                    {['Salesman', 'Date', 'Litres', 'Revenue', 'Cash Variance', 'Status'].map((h) => (
                       <th key={h} className="text-left px-5 py-3 text-on-surface-variant font-semibold text-xs uppercase tracking-wider whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {filteredShifts.length === 0 ? (
-                    <tr><td colSpan={7} className="px-5 py-8 text-center text-on-surface-variant text-sm">No shifts found</td></tr>
+                    <tr><td colSpan={6} className="px-5 py-8 text-center text-on-surface-variant text-sm">No shifts found</td></tr>
                   ) : (
                     filteredShifts.map((shift, i) => (
                       <tr key={shift.id} className={cn('border-b border-outline-variant last:border-0', i % 2 ? 'bg-surface-container-low/30' : '')}>
@@ -369,13 +344,6 @@ export default function ManagerDashboard() {
                           {shift.cashVariance !== 0 ? (
                             <span className={shift.cashVariance < 0 ? 'text-rose-600 font-medium' : 'text-emerald-600 font-medium'}>
                               {shift.cashVariance > 0 ? '+' : ''}₹{shift.cashVariance.toLocaleString('en-IN')}
-                            </span>
-                          ) : <span className="text-on-surface-variant">—</span>}
-                        </td>
-                        <td className="px-5 py-3 text-right">
-                          {shift.dipVariancePct > 0 ? (
-                            <span className={cn('font-medium', shift.dipVariancePct > 2 ? 'text-red-600' : shift.dipVariancePct > 0.5 ? 'text-amber-600' : 'text-emerald-600')}>
-                              {shift.dipVariancePct}%
                             </span>
                           ) : <span className="text-on-surface-variant">—</span>}
                         </td>

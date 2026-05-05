@@ -1,9 +1,12 @@
 import { create } from 'zustand'
 import { supabase } from '@/lib/supabase'
 import { BUNK_ID } from '@/lib/constants'
-import type { Shift, TankerDelivery, Expense, FuelType } from '@/types'
+import { useAppStore } from '@/store/appStore'
+import type { Shift, NozzleReading, TankerDelivery, Expense, FuelType, NozzleSlot, ShiftStatus } from '@/types'
 
 export type DateFilter = 'today' | 'week' | 'month' | 'all'
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function dateRangeFor(filter: DateFilter): { from: string; to: string } {
   const now = new Date()
@@ -26,39 +29,78 @@ function dateRangeFor(filter: DateFilter): { from: string; to: string } {
 function rowToShift(r: Record<string, unknown>): Shift {
   return {
     id: r.id as string,
+    dispenserUnitId: r.dispenser_unit_id as string,
     salesmanId: r.salesman_id as string,
     salesmanName: r.salesman_name as string,
     openedAt: r.opened_at as string,
     closedAt: r.closed_at as string | null,
-    status: r.status as 'open' | 'closed' | 'flagged',
-    totalLitresSold: Number(r.total_litres_sold),
-    totalCashCollected: Number(r.total_cash_collected),
-    expectedCash: Number(r.expected_cash),
-    cashVariance: Number(r.cash_variance),
-    dipVariancePct: Number(r.dip_variance_pct),
-    msLitres: Number(r.ms_litres),
-    hsdLitres: Number(r.hsd_litres),
-    xpLitres: Number(r.xp_litres ?? 0),
-    msRevenue: Number(r.ms_revenue),
-    hsdRevenue: Number(r.hsd_revenue),
-    xpRevenue: Number(r.xp_revenue ?? 0),
-    notes: r.notes as string | null,
+    status: r.status as ShiftStatus,
+    totalLitresSold: Number(r.total_litres_sold ?? 0),
+    totalRevenue: Number(r.total_revenue ?? 0),
+    totalCashCollected: Number(r.total_cash_collected ?? 0),
+    expectedCash: Number(r.expected_cash ?? 0),
+    cashVariance: Number(r.cash_variance ?? 0),
+    msLitres: Number(r.ms_litres ?? 0),
+    hsdLitres: Number(r.hsd_litres ?? 0),
+    msRevenue: Number(r.ms_revenue ?? 0),
+    hsdRevenue: Number(r.hsd_revenue ?? 0),
+    notes: (r.notes as string | null) ?? null,
   }
 }
 
-export interface EditShiftData {
-  msLitres: number
-  hsdLitres: number
-  msRevenue: number
-  hsdRevenue: number
+function rowToReading(r: Record<string, unknown>): NozzleReading {
+  return {
+    id: r.id as string,
+    shiftId: r.shift_id as string,
+    nozzleId: r.nozzle_id as string,
+    nozzleName: r.nozzle_name as string,
+    fuelType: r.fuel_type as FuelType,
+    slot: Number(r.slot) as NozzleSlot,
+    openingCumVolume: Number(r.opening_cum_volume ?? 0),
+    openingCumSale: Number(r.opening_cum_sale ?? 0),
+    closingCumVolume: r.closing_cum_volume == null ? null : Number(r.closing_cum_volume),
+    closingCumSale: r.closing_cum_sale == null ? null : Number(r.closing_cum_sale),
+    litresSold: Number(r.litres_sold ?? 0),
+    rupeesSold: Number(r.rupees_sold ?? 0),
+  }
+}
+
+export interface OpenShiftInput {
+  dispenserUnitId: string
+  salesmanId: string
+  salesmanName: string
+  openings: {
+    nozzleId: string
+    nozzleName: string
+    fuelType: FuelType
+    slot: NozzleSlot
+    openingCumVolume: number
+    openingCumSale: number
+  }[]
+}
+
+export interface CloseShiftInput {
+  shiftId: string
+  closings: {
+    nozzleId: string
+    closingCumVolume: number
+    closingCumSale: number
+  }[]
   cashCollected: number
-  expectedCash: number
-  dipVariancePct: number
-  notes?: string
+}
+
+export interface OpeningReading {
+  nozzleId: string
+  nozzleName: string
+  fuelType: FuelType
+  slot: NozzleSlot
+  openingCumVolume: number
+  openingCumSale: number
 }
 
 interface ShiftsState {
   shifts: Shift[]
+  nozzleReadings: NozzleReading[]
   deliveries: TankerDelivery[]
   expenses: Expense[]
   loading: boolean
@@ -67,22 +109,15 @@ interface ShiftsState {
   setDateFilter: (f: DateFilter) => void
   setStatusFilter: (f: 'all' | 'open' | 'closed' | 'flagged') => void
   loadShifts: (dateFilter?: DateFilter) => Promise<void>
+  loadNozzleReadings: (shiftId: string) => Promise<void>
   loadDeliveries: () => Promise<void>
   loadExpenses: () => Promise<void>
-  openShift: (salesmanId: string, salesmanName: string) => Promise<Shift | null>
-  closeShift: (
-    shiftId: string,
-    cashCollected: number,
-    expectedCash: number,
-    msLitres: number,
-    hsdLitres: number,
-    msRevenue: number,
-    hsdRevenue: number,
-    dipVariancePct?: number,
-  ) => Promise<void>
-  editShift: (shiftId: string, data: EditShiftData) => Promise<void>
-  deleteShift: (id: string) => Promise<void>
+  openShift: (input: OpenShiftInput) => Promise<{ shiftId: string }>
+  closeShift: (input: CloseShiftInput) => Promise<void>
+  updateOpeningReadings: (shiftId: string, openings: OpeningReading[]) => Promise<void>
+  getOpeningReadingsForDU: (dispenserUnitId: string) => Promise<OpeningReading[]>
   flagShift: (shiftId: string) => Promise<void>
+  deleteShift: (id: string) => Promise<void>
   addDelivery: (d: Omit<TankerDelivery, 'id'>) => Promise<void>
   updateDelivery: (id: string, d: Omit<TankerDelivery, 'id'>) => Promise<void>
   deleteDelivery: (id: string) => Promise<void>
@@ -93,6 +128,7 @@ interface ShiftsState {
 
 export const useShiftsStore = create<ShiftsState>((set, get) => ({
   shifts: [],
+  nozzleReadings: [],
   deliveries: [],
   expenses: [],
   loading: false,
@@ -117,8 +153,25 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
       .gte('opened_at', from)
       .lte('opened_at', to)
       .order('opened_at', { ascending: false })
-    if (data) set({ shifts: data.map(rowToShift) })
+    if (data) set({ shifts: (data as Record<string, unknown>[]).map(rowToShift) })
     set({ loading: false })
+  },
+
+  loadNozzleReadings: async (shiftId) => {
+    const { data } = await supabase
+      .from('nozzle_readings')
+      .select('*')
+      .eq('shift_id', shiftId)
+      .order('slot', { ascending: true })
+    if (data) {
+      const fresh = (data as Record<string, unknown>[]).map(rowToReading)
+      set((s) => ({
+        nozzleReadings: [
+          ...s.nozzleReadings.filter((r) => r.shiftId !== shiftId),
+          ...fresh,
+        ],
+      }))
+    }
   },
 
   loadDeliveries: async () => {
@@ -129,7 +182,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
       .order('delivery_date', { ascending: false })
     if (data) {
       set({
-        deliveries: data.map((r: Record<string, unknown>) => ({
+        deliveries: (data as Record<string, unknown>[]).map((r) => ({
           id: r.id as string,
           tankId: r.tank_id as string,
           tankName: r.tank_name as string,
@@ -153,7 +206,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
       .order('expense_date', { ascending: false })
     if (data) {
       set({
-        expenses: data.map((r: Record<string, unknown>) => ({
+        expenses: (data as Record<string, unknown>[]).map((r) => ({
           id: r.id as string,
           description: r.description as string,
           amount: Number(r.amount),
@@ -164,53 +217,236 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
     }
   },
 
-  openShift: async (salesmanId, salesmanName) => {
-    const { data, error } = await supabase
+  openShift: async (input) => {
+    if (!UUID_REGEX.test(input.salesmanId)) {
+      throw new Error('Invalid salesman id')
+    }
+
+    const { data: existing } = await supabase
       .from('shifts')
-      .insert({ bunk_id: BUNK_ID, salesman_id: salesmanId, salesman_name: salesmanName })
+      .select('id')
+      .eq('dispenser_unit_id', input.dispenserUnitId)
+      .eq('status', 'open')
+      .limit(1)
+    if (existing && existing.length > 0) {
+      throw new Error('Dispenser unit already has an open shift')
+    }
+
+    const { data: shiftRow, error: shiftErr } = await supabase
+      .from('shifts')
+      .insert({
+        bunk_id: BUNK_ID,
+        dispenser_unit_id: input.dispenserUnitId,
+        salesman_id: input.salesmanId,
+        salesman_name: input.salesmanName,
+        status: 'open',
+      })
       .select()
       .single()
-    if (error) {
-      console.error('openShift failed:', error.message)
-      return null
+
+    if (shiftErr || !shiftRow) {
+      throw new Error(shiftErr?.message ?? 'Failed to open shift')
     }
-    if (data) {
-      const shift = rowToShift(data as Record<string, unknown>)
-      set((s) => ({ shifts: [shift, ...s.shifts] }))
-      return shift
+
+    const shift = rowToShift(shiftRow as Record<string, unknown>)
+    const shiftId = shift.id
+
+    const readingsPayload = input.openings.map((o) => ({
+      shift_id: shiftId,
+      nozzle_id: o.nozzleId,
+      nozzle_name: o.nozzleName,
+      fuel_type: o.fuelType,
+      slot: o.slot,
+      opening_cum_volume: o.openingCumVolume,
+      opening_cum_sale: o.openingCumSale,
+      closing_cum_volume: null,
+      closing_cum_sale: null,
+      litres_sold: 0,
+      rupees_sold: 0,
+    }))
+
+    const { data: readingRows, error: readingErr } = await supabase
+      .from('nozzle_readings')
+      .insert(readingsPayload)
+      .select()
+
+    if (readingErr) {
+      // Roll back the orphan shift row so the DU isn't permanently locked.
+      await supabase.from('shifts').delete().eq('id', shiftId)
+      throw new Error(readingErr.message)
     }
-    return null
+
+    const newReadings = readingRows
+      ? (readingRows as Record<string, unknown>[]).map(rowToReading)
+      : []
+
+    set((s) => ({
+      shifts: [shift, ...s.shifts],
+      nozzleReadings: [...s.nozzleReadings, ...newReadings],
+    }))
+
+    return { shiftId }
   },
 
-  closeShift: async (shiftId, cashCollected, expectedCash, msLitres, hsdLitres, msRevenue, hsdRevenue, dipVariancePct = 0) => {
-    const totalLitres = msLitres + hsdLitres
-    const cashVariance = cashCollected - expectedCash
-    await supabase.from('shifts').update({
-      status: 'closed',
-      closed_at: new Date().toISOString(),
-      total_litres_sold: totalLitres,
-      total_cash_collected: cashCollected,
-      expected_cash: expectedCash,
-      cash_variance: cashVariance,
-      dip_variance_pct: dipVariancePct,
-      ms_litres: msLitres,
-      hsd_litres: hsdLitres,
-      ms_revenue: msRevenue,
-      hsd_revenue: hsdRevenue,
-    }).eq('id', shiftId)
+  closeShift: async (input) => {
+    // Guard against double-close: if shift is already closed, reject before any writes.
+    const { data: shiftStatus } = await supabase
+      .from('shifts')
+      .select('status')
+      .eq('id', input.shiftId)
+      .single()
+    if (!shiftStatus || (shiftStatus as Record<string, unknown>).status !== 'open') {
+      throw new Error('Shift is not open — cannot close')
+    }
+
+    const { data: readingRows, error: loadErr } = await supabase
+      .from('nozzle_readings')
+      .select('*')
+      .eq('shift_id', input.shiftId)
+
+    if (loadErr || !readingRows) {
+      throw new Error(loadErr?.message ?? 'Failed to load nozzle readings')
+    }
+
+    const readings = (readingRows as Record<string, unknown>[]).map(rowToReading)
+
+    interface UpdatePayload {
+      readingId: string
+      nozzleId: string
+      fuelType: FuelType
+      closingCumVolume: number
+      closingCumSale: number
+      litresSold: number
+      rupeesSold: number
+    }
+
+    const updates: UpdatePayload[] = []
+
+    for (const closing of input.closings) {
+      const reading = readings.find((r) => r.nozzleId === closing.nozzleId)
+      if (!reading) {
+        throw new Error(`No opening reading found for nozzle ${closing.nozzleId}`)
+      }
+      if (closing.closingCumVolume < reading.openingCumVolume) {
+        throw new Error(
+          `Closing volume (${closing.closingCumVolume}) less than opening (${reading.openingCumVolume}) for ${reading.nozzleName}`,
+        )
+      }
+      if (closing.closingCumSale < reading.openingCumSale) {
+        throw new Error(
+          `Closing sale (${closing.closingCumSale}) less than opening (${reading.openingCumSale}) for ${reading.nozzleName}`,
+        )
+      }
+      updates.push({
+        readingId: reading.id,
+        nozzleId: reading.nozzleId,
+        fuelType: reading.fuelType,
+        closingCumVolume: closing.closingCumVolume,
+        closingCumSale: closing.closingCumSale,
+        litresSold: closing.closingCumVolume - reading.openingCumVolume,
+        rupeesSold: closing.closingCumSale - reading.openingCumSale,
+      })
+    }
+
+    for (const u of updates) {
+      const { error } = await supabase
+        .from('nozzle_readings')
+        .update({
+          closing_cum_volume: u.closingCumVolume,
+          closing_cum_sale: u.closingCumSale,
+          litres_sold: u.litresSold,
+          rupees_sold: u.rupeesSold,
+        })
+        .eq('id', u.readingId)
+      if (error) {
+        throw new Error(error.message)
+      }
+    }
+
+    // One pass over updates to produce all six aggregates. Reads as
+    // "for each nozzle, add its litres + rupees to the right buckets."
+    const totals = updates.reduce(
+      (acc, u) => {
+        acc.totalLitresSold += u.litresSold
+        acc.totalRevenue += u.rupeesSold
+        if (u.fuelType === 'MS') {
+          acc.msLitres += u.litresSold
+          acc.msRevenue += u.rupeesSold
+        } else {
+          acc.hsdLitres += u.litresSold
+          acc.hsdRevenue += u.rupeesSold
+        }
+        return acc
+      },
+      { totalLitresSold: 0, totalRevenue: 0, msLitres: 0, hsdLitres: 0, msRevenue: 0, hsdRevenue: 0 },
+    )
+    const { totalLitresSold, totalRevenue, msLitres, hsdLitres, msRevenue, hsdRevenue } = totals
+
+    const expectedCash = totalRevenue
+    const cashVariance = input.cashCollected - expectedCash
+    const closedAt = new Date().toISOString()
+
+    const { error: updErr } = await supabase
+      .from('shifts')
+      .update({
+        status: 'closed',
+        closed_at: closedAt,
+        total_litres_sold: totalLitresSold,
+        total_revenue: totalRevenue,
+        total_cash_collected: input.cashCollected,
+        expected_cash: expectedCash,
+        cash_variance: cashVariance,
+        ms_litres: msLitres,
+        hsd_litres: hsdLitres,
+        ms_revenue: msRevenue,
+        hsd_revenue: hsdRevenue,
+      })
+      .eq('id', input.shiftId)
+
+    if (updErr) {
+      throw new Error(updErr.message)
+    }
+
+    // Tank stock decrement: aggregate litres per tank via nozzle.tank_id lookup.
+    const nozzleIds = updates.map((u) => u.nozzleId)
+    if (nozzleIds.length > 0) {
+      const { data: nozzleRows } = await supabase
+        .from('nozzles')
+        .select('id, tank_id')
+        .in('id', nozzleIds)
+
+      if (nozzleRows) {
+        const nozzleToTank = new Map<string, string>()
+        for (const n of nozzleRows as Record<string, unknown>[]) {
+          nozzleToTank.set(n.id as string, n.tank_id as string)
+        }
+
+        const tankDelta = new Map<string, number>()
+        for (const u of updates) {
+          const tankId = nozzleToTank.get(u.nozzleId)
+          if (!tankId) continue
+          tankDelta.set(tankId, (tankDelta.get(tankId) ?? 0) + u.litresSold)
+        }
+
+        const updateTankStock = useAppStore.getState().updateTankStock
+        for (const [tankId, litres] of tankDelta) {
+          await updateTankStock(tankId, -litres)
+        }
+      }
+    }
 
     set((s) => ({
       shifts: s.shifts.map((sh) =>
-        sh.id === shiftId
+        sh.id === input.shiftId
           ? {
               ...sh,
               status: 'closed' as const,
-              closedAt: new Date().toISOString(),
-              totalLitresSold: totalLitres,
-              totalCashCollected: cashCollected,
+              closedAt,
+              totalLitresSold,
+              totalRevenue,
+              totalCashCollected: input.cashCollected,
               expectedCash,
               cashVariance,
-              dipVariancePct,
               msLitres,
               hsdLitres,
               msRevenue,
@@ -218,49 +454,106 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
             }
           : sh,
       ),
+      nozzleReadings: s.nozzleReadings.map((r) => {
+        const u = updates.find((x) => x.readingId === r.id)
+        if (!u) return r
+        return {
+          ...r,
+          closingCumVolume: u.closingCumVolume,
+          closingCumSale: u.closingCumSale,
+          litresSold: u.litresSold,
+          rupeesSold: u.rupeesSold,
+        }
+      }),
     }))
   },
 
-  editShift: async (shiftId, data) => {
-    const totalLitres = data.msLitres + data.hsdLitres
-    const cashVariance = data.cashCollected - data.expectedCash
-    await supabase.from('shifts').update({
-      total_litres_sold: totalLitres,
-      total_cash_collected: data.cashCollected,
-      expected_cash: data.expectedCash,
-      cash_variance: cashVariance,
-      dip_variance_pct: data.dipVariancePct,
-      ms_litres: data.msLitres,
-      hsd_litres: data.hsdLitres,
-      ms_revenue: data.msRevenue,
-      hsd_revenue: data.hsdRevenue,
-      notes: data.notes ?? null,
-    }).eq('id', shiftId)
+  updateOpeningReadings: async (shiftId, openings) => {
+    const shift = get().shifts.find((s) => s.id === shiftId)
+    if (!shift) {
+      const { data } = await supabase.from('shifts').select('status').eq('id', shiftId).single()
+      if (!data || (data as Record<string, unknown>).status !== 'open') {
+        throw new Error('Cannot edit openings on a closed shift')
+      }
+    } else if (shift.status !== 'open') {
+      throw new Error('Cannot edit openings on a closed shift')
+    }
+
+    for (const o of openings) {
+      const { error } = await supabase
+        .from('nozzle_readings')
+        .update({
+          opening_cum_volume: o.openingCumVolume,
+          opening_cum_sale: o.openingCumSale,
+        })
+        .eq('shift_id', shiftId)
+        .eq('nozzle_id', o.nozzleId)
+      if (error) {
+        throw new Error(error.message)
+      }
+    }
 
     set((s) => ({
-      shifts: s.shifts.map((sh) =>
-        sh.id === shiftId
-          ? {
-              ...sh,
-              totalLitresSold: totalLitres,
-              totalCashCollected: data.cashCollected,
-              expectedCash: data.expectedCash,
-              cashVariance,
-              dipVariancePct: data.dipVariancePct,
-              msLitres: data.msLitres,
-              hsdLitres: data.hsdLitres,
-              msRevenue: data.msRevenue,
-              hsdRevenue: data.hsdRevenue,
-              notes: data.notes ?? null,
-            }
-          : sh,
-      ),
+      nozzleReadings: s.nozzleReadings.map((r) => {
+        if (r.shiftId !== shiftId) return r
+        const match = openings.find((o) => o.nozzleId === r.nozzleId)
+        if (!match) return r
+        return {
+          ...r,
+          openingCumVolume: match.openingCumVolume,
+          openingCumSale: match.openingCumSale,
+        }
+      }),
     }))
   },
 
-  deleteShift: async (id) => {
-    set((s) => ({ shifts: s.shifts.filter((sh) => sh.id !== id) }))
-    await supabase.from('shifts').delete().eq('id', id)
+  getOpeningReadingsForDU: async (dispenserUnitId) => {
+    // Always start from the LIVE nozzles for this DU. If a previous shift
+    // referenced a now-deleted nozzle, we don't carry that stale ID forward.
+    const liveNozzles = useAppStore
+      .getState()
+      .nozzles.filter((n) => n.dispenserUnitId === dispenserUnitId)
+      .slice()
+      .sort((a, b) => a.slot - b.slot)
+
+    const { data: lastShift } = await supabase
+      .from('shifts')
+      .select('id')
+      .eq('dispenser_unit_id', dispenserUnitId)
+      .eq('status', 'closed')
+      .order('closed_at', { ascending: false })
+      .limit(1)
+
+    // Map nozzleId → last shift's closing values (if any).
+    const lastClosing = new Map<string, { volume: number; sale: number }>()
+    if (lastShift && lastShift.length > 0) {
+      const lastShiftId = (lastShift[0] as Record<string, unknown>).id as string
+      const { data: readingRows } = await supabase
+        .from('nozzle_readings')
+        .select('*')
+        .eq('shift_id', lastShiftId)
+      if (readingRows) {
+        for (const row of readingRows as Record<string, unknown>[]) {
+          const r = rowToReading(row)
+          lastClosing.set(r.nozzleId, {
+            volume: r.closingCumVolume ?? r.openingCumVolume,
+            sale: r.closingCumSale ?? r.openingCumSale,
+          })
+        }
+      }
+    }
+
+    return liveNozzles.map((n) => {
+      const prev = lastClosing.get(n.id)
+      return {
+        nozzleId: n.id,
+        nozzleName: n.name,
+        fuelType: n.fuelType,
+        slot: n.slot,
+        openingCumVolume: prev?.volume ?? 0,
+        openingCumSale: prev?.sale ?? 0,
+      }
+    })
   },
 
   flagShift: async (shiftId) => {
@@ -268,6 +561,14 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
     set((s) => ({
       shifts: s.shifts.map((sh) => (sh.id === shiftId ? { ...sh, status: 'flagged' as const } : sh)),
     }))
+  },
+
+  deleteShift: async (id) => {
+    set((s) => ({
+      shifts: s.shifts.filter((sh) => sh.id !== id),
+      nozzleReadings: s.nozzleReadings.filter((r) => r.shiftId !== id),
+    }))
+    await supabase.from('shifts').delete().eq('id', id)
   },
 
   addDelivery: async (d) => {

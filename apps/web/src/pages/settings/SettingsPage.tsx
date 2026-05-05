@@ -1,15 +1,16 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAppStore } from '@/store/appStore'
 import { useAuthStore } from '@/store/authStore'
 import { cn } from '@/lib/utils'
-import type { Tank, Nozzle, User, FuelType, Role } from '@/types'
-import { FUEL_LABELS } from '@/lib/constants'
+import type { Tank, Nozzle, NozzleSlot, User, FuelType, Role, DispenserUnit } from '@/types'
+import { FUEL_LABELS, FUEL_TYPES, NOZZLE_SLOTS } from '@/lib/constants'
 
-type Tab = 'bunk' | 'tanks' | 'nozzles' | 'staff' | 'prices'
+type Tab = 'bunk' | 'dispensers' | 'tanks' | 'nozzles' | 'staff' | 'prices'
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'bunk', label: 'Bunk Profile', icon: 'storefront' },
+  { id: 'dispensers', label: 'Dispenser Units', icon: 'view_module' },
   { id: 'tanks', label: 'Tanks', icon: 'water_drop' },
   { id: 'nozzles', label: 'Nozzles', icon: 'local_gas_station' },
   { id: 'staff', label: 'Staff', icon: 'group' },
@@ -98,6 +99,167 @@ function BunkProfileTab() {
         </button>
         {saved && <span className="text-emerald-600 text-sm font-medium">✓ Saved</span>}
       </div>
+    </div>
+  )
+}
+
+/* ── Dispenser Units Tab ── */
+type DispenserUnitForm = { number: string; displayName: string }
+const EMPTY_DU: DispenserUnitForm = { number: '', displayName: '' }
+
+function DispenserUnitsTab() {
+  const { dispenserUnits, nozzles, addDispenserUnit, updateDispenserUnit, deleteDispenserUnit } = useAppStore()
+  const [modal, setModal] = useState<{ mode: 'add' | 'edit'; du?: DispenserUnit } | null>(null)
+  const [form, setForm] = useState<DispenserUnitForm>(EMPTY_DU)
+  const [error, setError] = useState<string | null>(null)
+
+  function nozzleCount(duId: string): number {
+    return nozzles.filter((n) => n.dispenserUnitId === duId).length
+  }
+
+  function openAdd() {
+    setForm(EMPTY_DU)
+    setError(null)
+    setModal({ mode: 'add' })
+  }
+
+  function openEdit(du: DispenserUnit) {
+    setForm({ number: du.number, displayName: du.displayName })
+    setError(null)
+    setModal({ mode: 'edit', du })
+  }
+
+  async function handleSave() {
+    setError(null)
+    const number = form.number.trim()
+    if (!number) {
+      setError('Number is required')
+      return
+    }
+    const displayName = form.displayName.trim() || `DU ${number}`
+    try {
+      if (modal?.mode === 'add') {
+        await addDispenserUnit({ number, displayName })
+      } else if (modal?.du) {
+        await updateDispenserUnit(modal.du.id, { number, displayName })
+      }
+      setModal(null)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to save dispenser unit')
+    }
+  }
+
+  async function handleDelete(du: DispenserUnit) {
+    const ok = confirm(`Delete DU ${du.number}? Its nozzles and shift history will also be removed.`)
+    if (!ok) return
+    try {
+      await deleteDispenserUnit(du.id)
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to delete dispenser unit')
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-4">
+        <p className="text-on-surface-variant text-sm">{dispenserUnits.length} dispenser unit(s) configured</p>
+        <button
+          onClick={openAdd}
+          className="flex items-center justify-center gap-2 px-4 py-2.5 bg-secondary-container text-white rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity w-full sm:w-auto"
+        >
+          <span className="material-symbols-outlined text-[16px]">add</span>
+          Add DU
+        </button>
+      </div>
+
+      {dispenserUnits.length === 0 ? (
+        <div className="bg-surface-container-lowest rounded-xl border border-dashed border-outline-variant p-6 text-center">
+          <p className="text-on-surface-variant text-sm">
+            No dispenser units yet. Add your first DU (e.g. 80, 81, 82, 83).
+          </p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {dispenserUnits.map((du) => (
+            <div
+              key={du.id}
+              className="bg-surface-container-lowest rounded-xl border border-outline-variant p-4 flex items-center justify-between gap-3"
+            >
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="size-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  <span className="material-symbols-outlined text-[18px] text-primary">view_module</span>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-on-surface font-semibold text-sm truncate">
+                    DU {du.number}
+                    <span className="text-on-surface-variant font-normal"> · {du.displayName}</span>
+                  </p>
+                  <p className="text-on-surface-variant text-xs">
+                    {nozzleCount(du.id)} nozzle(s) configured
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+                <button
+                  onClick={() => openEdit(du)}
+                  className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[18px]">edit</span>
+                </button>
+                <button
+                  onClick={() => handleDelete(du)}
+                  className="p-2 rounded-lg text-on-surface-variant hover:bg-red-50 hover:text-red-600 transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[18px]">delete</span>
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {modal && (
+        <Modal
+          title={modal.mode === 'add' ? 'Add Dispenser Unit' : 'Edit Dispenser Unit'}
+          onClose={() => setModal(null)}
+        >
+          <div className="flex flex-col gap-4">
+            <Field label="Number">
+              <input
+                value={form.number}
+                onChange={(e) => setForm({ ...form, number: e.target.value })}
+                placeholder="e.g. 80"
+                className={INPUT_CLS}
+              />
+            </Field>
+            <Field label="Display Name (optional)">
+              <input
+                value={form.displayName}
+                onChange={(e) => setForm({ ...form, displayName: e.target.value })}
+                placeholder={form.number ? `DU ${form.number}` : 'DU 80'}
+                className={INPUT_CLS}
+              />
+            </Field>
+            {error && (
+              <p className="text-red-600 text-xs font-medium">{error}</p>
+            )}
+            <div className="flex flex-col-reverse sm:flex-row gap-3 pt-1">
+              <button
+                onClick={() => setModal(null)}
+                className="flex-1 py-2.5 border border-outline-variant rounded-lg text-sm font-semibold text-on-surface-variant hover:bg-surface-container"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                className="flex-1 py-2.5 bg-secondary-container text-white rounded-lg text-sm font-semibold hover:opacity-90"
+              >
+                {modal.mode === 'add' ? 'Add DU' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }
@@ -202,9 +364,11 @@ function TanksTab() {
                 onChange={(e) => setForm({ ...form, fuelType: e.target.value as FuelType })}
                 className={INPUT_CLS}
               >
-                <option value="MS">MS (Petrol)</option>
-                <option value="HSD">HSD (Diesel)</option>
-                <option value="XP">XP (Premium)</option>
+                {FUEL_TYPES.map((ft) => (
+                  <option key={ft} value={ft}>
+                    {FUEL_LABELS[ft]}
+                  </option>
+                ))}
               </select>
             </Field>
             <Field label="Capacity (Litres)">
@@ -245,39 +409,144 @@ function TanksTab() {
 }
 
 /* ── Nozzles Tab ── */
-type NozzleForm = { name: string; tankId: string; fuelType: FuelType; currentMeterReading: number }
+type NozzleForm = {
+  name: string
+  dispenserUnitId: string
+  slot: NozzleSlot
+  fuelType: FuelType
+  tankId: string
+}
+
+function makeEmptyNozzle(dispenserUnits: DispenserUnit[], tanks: Tank[]): NozzleForm {
+  const firstDuId = dispenserUnits[0]?.id ?? ''
+  const firstMsTank = tanks.find((t) => t.fuelType === 'MS')
+  return {
+    name: '',
+    dispenserUnitId: firstDuId,
+    slot: 1,
+    fuelType: 'MS',
+    tankId: firstMsTank?.id ?? '',
+  }
+}
 
 function NozzlesTab() {
-  const { nozzles, tanks, addNozzle, updateNozzle, deleteNozzle } = useAppStore()
-  const firstTankId = tanks[0]?.id ?? ''
-  const EMPTY_NOZZLE: NozzleForm = { name: '', tankId: firstTankId, fuelType: 'MS', currentMeterReading: 0 }
+  const { nozzles, tanks, dispenserUnits, addNozzle, updateNozzle, deleteNozzle } = useAppStore()
 
   const [modal, setModal] = useState<{ mode: 'add' | 'edit'; nozzle?: Nozzle } | null>(null)
-  const [form, setForm] = useState<NozzleForm>(EMPTY_NOZZLE)
+  const [form, setForm] = useState<NozzleForm>(() => makeEmptyNozzle(dispenserUnits, tanks))
+  const [error, setError] = useState<string | null>(null)
+
+  const tanksForFuel: Tank[] = useMemo(
+    () => tanks.filter((t) => t.fuelType === form.fuelType),
+    [tanks, form.fuelType],
+  )
+
+  function takenSlotsForDu(duId: string, excludeNozzleId?: string): Set<NozzleSlot> {
+    const set = new Set<NozzleSlot>()
+    for (const n of nozzles) {
+      if (n.dispenserUnitId !== duId) continue
+      if (excludeNozzleId && n.id === excludeNozzleId) continue
+      set.add(n.slot)
+    }
+    return set
+  }
 
   function openAdd() {
-    setForm({ ...EMPTY_NOZZLE, tankId: firstTankId })
+    if (dispenserUnits.length === 0) {
+      setModal({ mode: 'add' })
+      setForm(makeEmptyNozzle(dispenserUnits, tanks))
+      setError(null)
+      return
+    }
+    setForm(makeEmptyNozzle(dispenserUnits, tanks))
+    setError(null)
     setModal({ mode: 'add' })
   }
 
   function openEdit(nozzle: Nozzle) {
-    setForm({ name: nozzle.name, tankId: nozzle.tankId, fuelType: nozzle.fuelType, currentMeterReading: nozzle.currentMeterReading })
+    setForm({
+      name: nozzle.name,
+      dispenserUnitId: nozzle.dispenserUnitId,
+      slot: nozzle.slot,
+      fuelType: nozzle.fuelType,
+      tankId: nozzle.tankId,
+    })
+    setError(null)
     setModal({ mode: 'edit', nozzle })
   }
 
-  function handleSave() {
-    if (!form.name.trim()) return
-    if (modal?.mode === 'add') {
-      addNozzle(form)
-    } else if (modal?.nozzle) {
-      updateNozzle(modal.nozzle.id, form)
+  async function handleSave() {
+    setError(null)
+    if (!form.name.trim()) {
+      setError('Name is required')
+      return
     }
-    setModal(null)
+    if (!form.dispenserUnitId) {
+      setError('Select a dispenser unit')
+      return
+    }
+    if (!form.tankId) {
+      setError(`Add a ${form.fuelType === 'MS' ? 'Petrol' : 'Diesel'} tank first`)
+      return
+    }
+    try {
+      if (modal?.mode === 'add') {
+        await addNozzle({
+          name: form.name.trim(),
+          dispenserUnitId: form.dispenserUnitId,
+          slot: form.slot,
+          fuelType: form.fuelType,
+          tankId: form.tankId,
+        })
+      } else if (modal?.nozzle) {
+        await updateNozzle(modal.nozzle.id, {
+          name: form.name.trim(),
+          dispenserUnitId: form.dispenserUnitId,
+          slot: form.slot,
+          fuelType: form.fuelType,
+          tankId: form.tankId,
+        })
+      }
+      setModal(null)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to save nozzle')
+    }
   }
 
-  function getTankName(tankId: string) {
+  function getTankName(tankId: string): string {
     return tanks.find((t) => t.id === tankId)?.name ?? 'Unknown'
   }
+
+  function getDuNumber(duId: string): string {
+    return dispenserUnits.find((d) => d.id === duId)?.number ?? '—'
+  }
+
+  function handleFuelChange(nextFuel: FuelType) {
+    const matchingTanks = tanks.filter((t) => t.fuelType === nextFuel)
+    setForm((prev) => ({
+      ...prev,
+      fuelType: nextFuel,
+      tankId: matchingTanks.some((t) => t.id === prev.tankId) ? prev.tankId : matchingTanks[0]?.id ?? '',
+    }))
+  }
+
+  function handleDuChange(nextDuId: string) {
+    const taken = takenSlotsForDu(nextDuId, modal?.nozzle?.id)
+    setForm((prev) => {
+      const slotOk = !taken.has(prev.slot)
+      const fallbackSlot = (NOZZLE_SLOTS.find((s) => !taken.has(s)) ?? 1) as NozzleSlot
+      return {
+        ...prev,
+        dispenserUnitId: nextDuId,
+        slot: slotOk ? prev.slot : fallbackSlot,
+      }
+    })
+  }
+
+  const noDuYet = dispenserUnits.length === 0
+  const takenSlots = takenSlotsForDu(form.dispenserUnitId, modal?.nozzle?.id)
+  const noTankForFuel = tanksForFuel.length === 0
+  const submitDisabled = noDuYet || noTankForFuel
 
   return (
     <div>
@@ -305,10 +574,11 @@ function NozzlesTab() {
                 </span>
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-on-surface font-semibold text-sm truncate">{nozzle.name}</p>
+                <p className="text-on-surface font-semibold text-sm truncate">
+                  DU {getDuNumber(nozzle.dispenserUnitId)} · Slot {nozzle.slot} · {nozzle.name}
+                </p>
                 <p className="text-on-surface-variant text-xs break-words">
-                  {nozzle.fuelType} · {getTankName(nozzle.tankId)} ·{' '}
-                  Meter: {nozzle.currentMeterReading.toLocaleString('en-IN')} L
+                  {nozzle.fuelType} · {getTankName(nozzle.tankId)}
                 </p>
               </div>
             </div>
@@ -338,49 +608,95 @@ function NozzlesTab() {
           onClose={() => setModal(null)}
         >
           <div className="flex flex-col gap-4">
+            {noDuYet && (
+              <p className="text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs font-medium">
+                Add a Dispenser Unit first.
+              </p>
+            )}
+
             <Field label="Nozzle Name">
               <input
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="e.g. Nozzle 4"
+                placeholder="e.g. Nozzle A"
                 className={INPUT_CLS}
+                disabled={noDuYet}
               />
             </Field>
-            <Field label="Assigned Tank">
+
+            <Field label="Dispenser Unit">
               <select
-                value={form.tankId}
-                onChange={(e) => {
-                  const tank = tanks.find((t) => t.id === e.target.value)
-                  setForm({ ...form, tankId: e.target.value, fuelType: tank?.fuelType ?? 'MS' })
-                }}
+                value={form.dispenserUnitId}
+                onChange={(e) => handleDuChange(e.target.value)}
                 className={INPUT_CLS}
+                disabled={noDuYet}
               >
-                {tanks.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} ({t.fuelType})
+                {dispenserUnits.map((du) => (
+                  <option key={du.id} value={du.id}>
+                    DU {du.number} · {du.displayName}
                   </option>
                 ))}
               </select>
             </Field>
+
+            <Field label="Slot">
+              <select
+                value={form.slot}
+                onChange={(e) => setForm({ ...form, slot: Number(e.target.value) as NozzleSlot })}
+                className={INPUT_CLS}
+                disabled={noDuYet}
+              >
+                {NOZZLE_SLOTS.map((s) => {
+                  const isTaken = takenSlots.has(s as NozzleSlot)
+                  return (
+                    <option key={s} value={s} disabled={isTaken}>
+                      Slot {s}{isTaken ? ' (taken)' : ''}
+                    </option>
+                  )
+                })}
+              </select>
+            </Field>
+
             <Field label="Fuel Type">
               <select
                 value={form.fuelType}
-                onChange={(e) => setForm({ ...form, fuelType: e.target.value as FuelType })}
+                onChange={(e) => handleFuelChange(e.target.value as FuelType)}
                 className={INPUT_CLS}
+                disabled={noDuYet}
               >
-                <option value="MS">MS (Petrol)</option>
-                <option value="HSD">HSD (Diesel)</option>
-                <option value="XP">XP (Premium)</option>
+                {FUEL_TYPES.map((ft) => (
+                  <option key={ft} value={ft}>
+                    {FUEL_LABELS[ft]}
+                  </option>
+                ))}
               </select>
             </Field>
-            <Field label="Current Meter Reading (L)">
-              <input
-                type="number"
-                value={form.currentMeterReading}
-                onChange={(e) => setForm({ ...form, currentMeterReading: Number(e.target.value) })}
-                className={INPUT_CLS}
-              />
+
+            <Field label="Tank">
+              {noTankForFuel ? (
+                <p className="text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs font-medium">
+                  Add a {form.fuelType === 'MS' ? 'Petrol' : 'Diesel'} tank first.
+                </p>
+              ) : (
+                <select
+                  value={form.tankId}
+                  onChange={(e) => setForm({ ...form, tankId: e.target.value })}
+                  className={INPUT_CLS}
+                  disabled={noDuYet}
+                >
+                  {tanksForFuel.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} ({t.fuelType})
+                    </option>
+                  ))}
+                </select>
+              )}
             </Field>
+
+            {error && (
+              <p className="text-red-600 text-xs font-medium">{error}</p>
+            )}
+
             <div className="flex flex-col-reverse sm:flex-row gap-3 pt-1">
               <button
                 onClick={() => setModal(null)}
@@ -390,7 +706,8 @@ function NozzlesTab() {
               </button>
               <button
                 onClick={handleSave}
-                className="flex-1 py-2.5 bg-secondary-container text-white rounded-lg text-sm font-semibold hover:opacity-90"
+                disabled={submitDisabled}
+                className="flex-1 py-2.5 bg-secondary-container text-white rounded-lg text-sm font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {modal.mode === 'add' ? 'Add Nozzle' : 'Save Changes'}
               </button>
@@ -577,6 +894,11 @@ function FuelPricesTab() {
   const [editing, setEditing] = useState<Record<string, string>>({})
   const [saved, setSaved] = useState<Record<string, boolean>>({})
 
+  const visiblePrices = useMemo(
+    () => fuelPrices.filter((p) => (FUEL_TYPES as readonly string[]).includes(p.fuelType)),
+    [fuelPrices],
+  )
+
   function startEdit(id: string, current: number) {
     setEditing((prev) => ({ ...prev, [id]: String(current) }))
   }
@@ -594,21 +916,21 @@ function FuelPricesTab() {
     setEditing((prev) => { const n = { ...prev }; delete n[id]; return n })
   }
 
-  if (fuelPrices.length === 0) {
+  if (visiblePrices.length === 0) {
     return <p className="text-on-surface-variant text-sm">No fuel prices found. Run SQL_SETUP.sql to seed data.</p>
   }
 
   return (
     <div className="max-w-lg flex flex-col gap-4">
       <p className="text-on-surface-variant text-sm">Update the selling price per litre for each fuel type. Changes apply to all new shift calculations.</p>
-      {fuelPrices.map((p) => (
+      {visiblePrices.map((p) => (
         <div key={p.id} className="bg-surface-container-lowest rounded-xl border border-outline-variant p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0 flex-1">
             <div className="size-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
               <span className="material-symbols-outlined text-[18px] text-primary">local_offer</span>
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-on-surface font-semibold text-sm truncate">{FUEL_LABELS[p.fuelType as FuelType]}</p>
+              <p className="text-on-surface font-semibold text-sm truncate">{FUEL_LABELS[p.fuelType]}</p>
               {editing[p.id] === undefined && (
                 <p className="text-on-surface-variant text-xs">₹{p.pricePerLitre.toFixed(2)} / litre</p>
               )}
@@ -681,6 +1003,7 @@ export default function SettingsPage() {
 
       {/* Content */}
       {activeTab === 'bunk' && <BunkProfileTab />}
+      {activeTab === 'dispensers' && <DispenserUnitsTab />}
       {activeTab === 'tanks' && <TanksTab />}
       {activeTab === 'nozzles' && <NozzlesTab />}
       {activeTab === 'staff' && <StaffTab />}

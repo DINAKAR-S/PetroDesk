@@ -1,9 +1,17 @@
-import { useState } from 'react'
-import { useShiftsStore, type DateFilter, type EditShiftData } from '@/store/shiftsStore'
+import { Fragment, useEffect, useMemo, useState } from 'react'
+import { useShiftsStore, type DateFilter, type OpeningReading } from '@/store/shiftsStore'
 import { useAppStore } from '@/store/appStore'
 import { useAuthStore } from '@/store/authStore'
-import { cn } from '@/lib/utils'
-import type { Shift, User, FuelPrice } from '@/types'
+import { cn, formatINR } from '@/lib/utils'
+import { FUEL_LABELS } from '@/lib/constants'
+import type {
+  Shift,
+  NozzleReading,
+  User,
+  DispenserUnit,
+  FuelType,
+  NozzleSlot,
+} from '@/types'
 
 const DATE_FILTERS: { label: string; value: DateFilter }[] = [
   { label: 'Today', value: 'today' },
@@ -15,71 +23,247 @@ const DATE_FILTERS: { label: string; value: DateFilter }[] = [
 const STATUS_STYLES: Record<string, string> = {
   closed: 'bg-emerald-50 text-emerald-700',
   open: 'bg-blue-50 text-blue-700',
-  pending: 'bg-gray-100 text-gray-500',
   flagged: 'bg-rose-50 text-rose-700',
 }
 
-interface OpenShiftModalProps {
-  users: User[]
-  currentUser: User
-  onClose: () => void
-  onSubmit: (salesmanId: string, salesmanName: string) => Promise<void>
+function formatTime(iso: string | null): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleTimeString('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
 }
 
-function OpenShiftModal({ users, currentUser, onClose, onSubmit }: OpenShiftModalProps) {
-  const salesmen = users.filter((u) => u.role === 'salesman')
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+}
+
+function duLabel(dispenserUnits: DispenserUnit[], duId: string): string {
+  const du = dispenserUnits.find((d) => d.id === duId)
+  if (!du) return 'DU —'
+  return `DU ${du.number}`
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Open Shift Modal
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface OpenShiftModalProps {
+  users: User[]
+  dispenserUnits: DispenserUnit[]
+  currentUser: User
+  onClose: () => void
+}
+
+function OpenShiftModal({ users, dispenserUnits, currentUser, onClose }: OpenShiftModalProps) {
+  const openShift = useShiftsStore((s) => s.openShift)
+  const getOpeningReadingsForDU = useShiftsStore((s) => s.getOpeningReadingsForDU)
+
+  const salesmen = useMemo(() => users.filter((u) => u.role === 'salesman'), [users])
   const isSalesman = currentUser.role === 'salesman'
-  const defaultId = isSalesman ? currentUser.id : (salesmen[0]?.id ?? '')
 
-  const [selectedId, setSelectedId] = useState(defaultId)
+  const [duId, setDuId] = useState<string>(dispenserUnits[0]?.id ?? '')
+  const [salesmanId, setSalesmanId] = useState<string>(
+    isSalesman ? currentUser.id : (salesmen[0]?.id ?? ''),
+  )
+  const [openings, setOpenings] = useState<OpeningReading[]>([])
+  const [loadingReadings, setLoadingReadings] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const selectedName = isSalesman
+  useEffect(() => {
+    if (!duId) {
+      setOpenings([])
+      return
+    }
+    let cancelled = false
+    setLoadingReadings(true)
+    getOpeningReadingsForDU(duId)
+      .then((rows) => {
+        if (!cancelled) setOpenings(rows)
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load opening readings')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingReadings(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [duId, getOpeningReadingsForDU])
+
+  const salesmanName = isSalesman
     ? currentUser.name
-    : (salesmen.find((u) => u.id === selectedId)?.name ?? '')
+    : (salesmen.find((u) => u.id === salesmanId)?.name ?? '')
+
+  const noNozzles = !loadingReadings && openings.length === 0 && duId !== ''
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!selectedId) return
+    setError(null)
+    if (!duId) {
+      setError('Select a dispenser unit')
+      return
+    }
+    if (!salesmanId) {
+      setError('Select a salesman')
+      return
+    }
+    if (noNozzles) {
+      setError('Configure nozzles for this DU in Settings first.')
+      return
+    }
     setSubmitting(true)
-    await onSubmit(selectedId, selectedName)
-    setSubmitting(false)
-    onClose()
+    try {
+      await openShift({
+        dispenserUnitId: duId,
+        salesmanId,
+        salesmanName,
+        openings,
+      })
+      onClose()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to open shift')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex sm:items-center sm:justify-center z-50" onClick={onClose}>
-      <div className="bg-surface-container-lowest w-full h-full sm:h-auto sm:max-w-lg sm:mx-4 sm:rounded-2xl shadow-xl p-4 sm:p-6 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 bg-black/40 flex sm:items-center sm:justify-center z-50"
+      onClick={onClose}
+    >
+      <div
+        className="bg-surface-container-lowest w-full h-full sm:h-auto sm:max-w-2xl sm:mx-4 sm:rounded-2xl sm:max-h-[90vh] shadow-xl p-4 sm:p-6 overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
         <h2 className="text-on-surface text-lg font-semibold mb-5">Open New Shift</h2>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          {/* Dispenser Unit */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-on-surface-variant text-sm font-medium">Dispenser Unit</label>
+            {dispenserUnits.length === 0 ? (
+              <div className="px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container text-sm text-on-surface-variant">
+                Add a dispenser unit in Settings first.
+              </div>
+            ) : (
+              <select
+                value={duId}
+                onChange={(e) => setDuId(e.target.value)}
+                className="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                required
+              >
+                {dispenserUnits.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    DU {d.number}
+                    {d.displayName ? ` · ${d.displayName}` : ''}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* Salesman */}
           <div className="flex flex-col gap-1.5">
             <label className="text-on-surface-variant text-sm font-medium">Salesman</label>
             {isSalesman ? (
               <div className="w-full px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container text-on-surface text-sm">
                 {currentUser.name}
               </div>
+            ) : salesmen.length === 0 ? (
+              <div className="px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container text-sm text-on-surface-variant">
+                Add a salesman in Settings first.
+              </div>
             ) : (
               <select
-                value={selectedId}
-                onChange={(e) => setSelectedId(e.target.value)}
+                value={salesmanId}
+                onChange={(e) => setSalesmanId(e.target.value)}
                 className="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                 required
               >
-                {salesmen.length === 0 ? (
-                  <option value="">No salesmen available</option>
-                ) : (
-                  salesmen.map((u) => (
-                    <option key={u.id} value={u.id}>{u.name}</option>
-                  ))
-                )}
+                {salesmen.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
               </select>
             )}
           </div>
+
+          {/* Nozzle openings (read-only) */}
+          <div className="flex flex-col gap-2">
+            <h3 className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider">
+              Opening Readings
+            </h3>
+            {loadingReadings ? (
+              <div className="px-3 py-3 rounded-xl bg-surface-container text-sm text-on-surface-variant">
+                Loading openings…
+              </div>
+            ) : noNozzles ? (
+              <div className="px-3 py-3 rounded-xl border border-rose-200 bg-rose-50 text-sm text-rose-700">
+                Configure nozzles for this DU in Settings first.
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {openings.map((o) => (
+                  <div
+                    key={o.nozzleId}
+                    className="px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container/40"
+                  >
+                    <div className="text-on-surface text-sm font-medium">
+                      Nozzle {o.slot} — {FUEL_LABELS[o.fuelType]} — {o.nozzleName}
+                    </div>
+                    <div className="mt-1 grid grid-cols-2 gap-2 text-xs text-on-surface-variant">
+                      <div>
+                        CumVolume:{' '}
+                        <span className="text-on-surface font-medium">
+                          {o.openingCumVolume.toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                      <div>
+                        CumSale:{' '}
+                        <span className="text-on-surface font-medium">
+                          ₹{o.openingCumSale.toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {isSalesman && openings.length > 0 && (
+                  <p className="text-xs text-on-surface-variant italic">
+                    If a value is wrong, ask your manager to fix it before closing.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {error && (
+            <div className="px-3 py-2 rounded-xl border border-rose-200 bg-rose-50 text-sm text-rose-700">
+              {error}
+            </div>
+          )}
+
           <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 mt-2">
-            <button type="button" onClick={onClose} className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-xl text-sm font-medium text-on-surface-variant bg-surface-container hover:bg-surface-container-high transition-colors">
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-xl text-sm font-medium text-on-surface-variant bg-surface-container hover:bg-surface-container-high transition-colors"
+            >
               Cancel
             </button>
-            <button type="submit" disabled={submitting || !selectedId} className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-xl text-sm font-medium bg-primary text-on-primary hover:opacity-90 transition-opacity disabled:opacity-60">
+            <button
+              type="submit"
+              disabled={
+                submitting || !duId || !salesmanId || loadingReadings || noNozzles
+              }
+              className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-xl text-sm font-medium bg-primary text-on-primary hover:opacity-90 transition-opacity disabled:opacity-60"
+            >
               {submitting ? 'Opening…' : 'Open Shift'}
             </button>
           </div>
@@ -89,233 +273,680 @@ function OpenShiftModal({ users, currentUser, onClose, onSubmit }: OpenShiftModa
   )
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Edit Opening Readings Modal (manager + owner only)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface EditOpeningReadingsModalProps {
+  shift: Shift
+  onClose: () => void
+}
+
+interface EditableOpeningRow {
+  nozzleId: string
+  nozzleName: string
+  fuelType: FuelType
+  slot: NozzleSlot
+  openingCumVolume: string
+  openingCumSale: string
+}
+
+function EditOpeningReadingsModal({ shift, onClose }: EditOpeningReadingsModalProps) {
+  const loadNozzleReadings = useShiftsStore((s) => s.loadNozzleReadings)
+  const updateOpeningReadings = useShiftsStore((s) => s.updateOpeningReadings)
+  const readings = useShiftsStore((s) =>
+    s.nozzleReadings.filter((r) => r.shiftId === shift.id),
+  )
+
+  const [rows, setRows] = useState<EditableOpeningRow[]>([])
+  const [hydrated, setHydrated] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    loadNozzleReadings(shift.id).then(() => {
+      if (!cancelled) setHydrated(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [loadNozzleReadings, shift.id])
+
+  // Hydrate rows from store readings once available; sort by slot
+  useEffect(() => {
+    if (!hydrated) return
+    if (rows.length > 0) return
+    const sorted = [...readings].sort((a, b) => a.slot - b.slot)
+    setRows(
+      sorted.map((r) => ({
+        nozzleId: r.nozzleId,
+        nozzleName: r.nozzleName,
+        fuelType: r.fuelType,
+        slot: r.slot,
+        openingCumVolume: String(r.openingCumVolume),
+        openingCumSale: String(r.openingCumSale),
+      })),
+    )
+  }, [hydrated, readings, rows.length])
+
+  function updateRow(idx: number, patch: Partial<EditableOpeningRow>): void {
+    setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)))
+  }
+
+  async function handleSubmit(e: React.FormEvent): Promise<void> {
+    e.preventDefault()
+    setError(null)
+    setSubmitting(true)
+    try {
+      const payload: OpeningReading[] = rows.map((r) => ({
+        nozzleId: r.nozzleId,
+        nozzleName: r.nozzleName,
+        fuelType: r.fuelType,
+        slot: r.slot,
+        openingCumVolume: Number(r.openingCumVolume) || 0,
+        openingCumSale: Number(r.openingCumSale) || 0,
+      }))
+      await updateOpeningReadings(shift.id, payload)
+      onClose()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to update openings')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 flex sm:items-center sm:justify-center z-50"
+      onClick={onClose}
+    >
+      <div
+        className="bg-surface-container-lowest w-full h-full sm:h-auto sm:max-w-2xl sm:mx-4 sm:rounded-2xl sm:max-h-[90vh] shadow-xl p-4 sm:p-6 overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-on-surface text-lg font-semibold mb-1">Edit Opening Readings</h2>
+        <p className="text-on-surface-variant text-sm mb-5">
+          {shift.salesmanName} · opened {formatTime(shift.openedAt)}
+        </p>
+
+        {!hydrated ? (
+          <p className="text-on-surface-variant text-sm">Loading…</p>
+        ) : rows.length === 0 ? (
+          <p className="text-on-surface-variant text-sm">No nozzle readings to edit.</p>
+        ) : (
+          <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+            {rows.map((r, i) => (
+              <div
+                key={r.nozzleId}
+                className="px-3 py-3 rounded-xl border border-outline-variant bg-surface-container/40 flex flex-col gap-2"
+              >
+                <div className="text-on-surface text-sm font-medium">
+                  Nozzle {r.slot} — {FUEL_LABELS[r.fuelType]} — {r.nozzleName}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-on-surface-variant text-xs">CumVolume</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      inputMode="decimal"
+                      value={r.openingCumVolume}
+                      onChange={(e) => updateRow(i, { openingCumVolume: e.target.value })}
+                      className="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-on-surface-variant text-xs">CumSale (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      inputMode="decimal"
+                      value={r.openingCumSale}
+                      onChange={(e) => updateRow(i, { openingCumSale: e.target.value })}
+                      className="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {error && (
+              <div className="px-3 py-2 rounded-xl border border-rose-200 bg-rose-50 text-sm text-rose-700">
+                {error}
+              </div>
+            )}
+
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 mt-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-xl text-sm font-medium text-on-surface-variant bg-surface-container hover:bg-surface-container-high transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-xl text-sm font-medium bg-primary text-on-primary hover:opacity-90 transition-opacity disabled:opacity-60"
+              >
+                {submitting ? 'Saving…' : 'Save Openings'}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Close Shift Modal
+// ─────────────────────────────────────────────────────────────────────────────
+
 interface CloseShiftModalProps {
   shift: Shift
-  fuelPrices: FuelPrice[]
   onClose: () => void
-  onSubmit: (
-    shiftId: string,
-    cashCollected: number,
-    expectedCash: number,
-    msLitres: number,
-    hsdLitres: number,
-    msRevenue: number,
-    hsdRevenue: number,
-    dipVariancePct?: number,
-  ) => Promise<void>
 }
 
-function CloseShiftModal({ shift, fuelPrices, onClose, onSubmit }: CloseShiftModalProps) {
-  const [msClosing, setMsClosing] = useState('')
-  const [msOpening, setMsOpening] = useState('')
-  const [hsdClosing, setHsdClosing] = useState('')
-  const [hsdOpening, setHsdOpening] = useState('')
+interface ClosingRowState {
+  nozzleId: string
+  nozzleName: string
+  fuelType: FuelType
+  slot: NozzleSlot
+  openingCumVolume: number
+  openingCumSale: number
+  closingCumVolume: string
+  closingCumSale: string
+}
+
+function CloseShiftModal({ shift, onClose }: CloseShiftModalProps) {
+  const loadNozzleReadings = useShiftsStore((s) => s.loadNozzleReadings)
+  const closeShift = useShiftsStore((s) => s.closeShift)
+  const readings = useShiftsStore((s) =>
+    s.nozzleReadings.filter((r) => r.shiftId === shift.id),
+  )
+
+  const [rows, setRows] = useState<ClosingRowState[]>([])
+  const [hydrated, setHydrated] = useState(false)
   const [cashCollected, setCashCollected] = useState('')
-  const [dipVariancePct, setDipVariancePct] = useState('0')
   const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const msPrice = fuelPrices.find((p) => p.fuelType === 'MS')?.pricePerLitre ?? 0
-  const hsdPrice = fuelPrices.find((p) => p.fuelType === 'HSD')?.pricePerLitre ?? 0
-
-  const msLitres = msClosing !== '' && msOpening !== '' ? Math.max(0, Number(msClosing) - Number(msOpening)) : 0
-  const hsdLitres = hsdClosing !== '' && hsdOpening !== '' ? Math.max(0, Number(hsdClosing) - Number(hsdOpening)) : 0
-  const totalLitres = msLitres + hsdLitres
-  const msRevenue = msLitres * msPrice
-  const hsdRevenue = hsdLitres * hsdPrice
-  const expectedCash = msRevenue + hsdRevenue
-  const cashNum = cashCollected !== '' ? Number(cashCollected) : 0
-  const cashVariance = cashCollected !== '' ? cashNum - expectedCash : 0
-  const dipPct = dipVariancePct !== '' ? Number(dipVariancePct) : 0
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setSubmitting(true)
-    await onSubmit(shift.id, cashNum, expectedCash, msLitres, hsdLitres, msRevenue, hsdRevenue, dipPct)
-    setSubmitting(false)
-    onClose()
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/40 flex sm:items-center sm:justify-center z-50" onClick={onClose}>
-      <div className="bg-surface-container-lowest w-full h-full sm:h-auto sm:max-w-lg sm:mx-4 sm:rounded-2xl sm:max-h-[90vh] shadow-xl p-4 sm:p-6 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-on-surface text-lg font-semibold mb-1">Close Shift</h2>
-        <p className="text-on-surface-variant text-sm mb-5">{shift.salesmanName}</p>
-        <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-          <section className="flex flex-col gap-3">
-            <h3 className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider">Meter Readings</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {[
-                { label: 'Petrol (MS) Closing', val: msClosing, set: setMsClosing },
-                { label: 'MS Opening', val: msOpening, set: setMsOpening },
-                { label: 'Diesel (HSD) Closing', val: hsdClosing, set: setHsdClosing },
-                { label: 'HSD Opening', val: hsdOpening, set: setHsdOpening },
-              ].map(({ label, val, set: setter }) => (
-                <div key={label} className="flex flex-col gap-1.5">
-                  <label className="text-on-surface-variant text-sm font-medium">{label}</label>
-                  <input
-                    type="number" min="0" step="0.01" inputMode="decimal"
-                    value={val} onChange={(e) => setter(e.target.value)}
-                    placeholder="Reading"
-                    className="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  />
-                </div>
-              ))}
-            </div>
-            <div className="px-3 py-2.5 rounded-xl bg-surface-container text-sm text-on-surface-variant break-words">
-              MS: <span className="text-on-surface font-medium">{msLitres.toLocaleString('en-IN')} L</span>{' '}
-              | HSD: <span className="text-on-surface font-medium">{hsdLitres.toLocaleString('en-IN')} L</span>{' '}
-              | Total: <span className="text-on-surface font-medium">{totalLitres.toLocaleString('en-IN')} L</span>
-            </div>
-          </section>
-          <section className="flex flex-col gap-3">
-            <h3 className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider">Cash</h3>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-on-surface-variant text-sm font-medium">Actual Cash Collected ₹</label>
-              <input
-                type="number" min="0" step="0.01" inputMode="decimal"
-                value={cashCollected} onChange={(e) => setCashCollected(e.target.value)}
-                placeholder="Enter amount"
-                className="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-            </div>
-            <div className="px-3 py-2.5 rounded-xl bg-surface-container text-sm flex flex-col gap-1 break-words">
-              <span className="text-on-surface-variant">Expected: <span className="text-on-surface font-medium">₹{expectedCash.toLocaleString('en-IN')}</span></span>
-              {cashCollected !== '' && (
-                <span className={cn('font-medium', cashVariance >= 0 ? 'text-emerald-600' : 'text-rose-600')}>
-                  Variance: {cashVariance >= 0 ? '+' : ''}₹{cashVariance.toLocaleString('en-IN')}
-                </span>
-              )}
-            </div>
-          </section>
-          <section className="flex flex-col gap-3">
-            <h3 className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider">DIP Reading (Optional)</h3>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-on-surface-variant text-sm font-medium">DIP Variance %</label>
-              <input
-                type="number" min="0" step="0.01" inputMode="decimal"
-                value={dipVariancePct} onChange={(e) => setDipVariancePct(e.target.value)}
-                placeholder="0"
-                className="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-            </div>
-          </section>
-          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 mt-1">
-            <button type="button" onClick={onClose} className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-xl text-sm font-medium text-on-surface-variant bg-surface-container hover:bg-surface-container-high transition-colors">Cancel</button>
-            <button type="submit" disabled={submitting} className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-xl text-sm font-medium bg-primary text-on-primary hover:opacity-90 transition-opacity disabled:opacity-60">
-              {submitting ? 'Closing…' : 'Close Shift'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-interface EditShiftModalProps {
-  shift: Shift
-  fuelPrices: FuelPrice[]
-  onClose: () => void
-  onSubmit: (shiftId: string, data: EditShiftData) => Promise<void>
-}
-
-function EditShiftModal({ shift, fuelPrices, onClose, onSubmit }: EditShiftModalProps) {
-  const [msLitres, setMsLitres] = useState(String(shift.msLitres))
-  const [hsdLitres, setHsdLitres] = useState(String(shift.hsdLitres))
-  const [cashCollected, setCashCollected] = useState(String(shift.totalCashCollected))
-  const [dipVariancePct, setDipVariancePct] = useState(String(shift.dipVariancePct))
-  const [notes, setNotes] = useState(shift.notes ?? '')
-  const [submitting, setSubmitting] = useState(false)
-
-  const msPrice = fuelPrices.find((p) => p.fuelType === 'MS')?.pricePerLitre ?? 0
-  const hsdPrice = fuelPrices.find((p) => p.fuelType === 'HSD')?.pricePerLitre ?? 0
-
-  const msL = Number(msLitres) || 0
-  const hsdL = Number(hsdLitres) || 0
-  const msRev = msL * msPrice
-  const hsdRev = hsdL * hsdPrice
-  const expectedCash = msRev + hsdRev
-  const cashNum = Number(cashCollected) || 0
-  const cashVariance = cashNum - expectedCash
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setSubmitting(true)
-    await onSubmit(shift.id, {
-      msLitres: msL,
-      hsdLitres: hsdL,
-      msRevenue: msRev,
-      hsdRevenue: hsdRev,
-      cashCollected: cashNum,
-      expectedCash,
-      dipVariancePct: Number(dipVariancePct) || 0,
-      notes: notes || undefined,
+  useEffect(() => {
+    let cancelled = false
+    loadNozzleReadings(shift.id).then(() => {
+      if (!cancelled) setHydrated(true)
     })
-    setSubmitting(false)
-    onClose()
+    return () => {
+      cancelled = true
+    }
+  }, [loadNozzleReadings, shift.id])
+
+  useEffect(() => {
+    if (!hydrated) return
+    if (rows.length > 0) return
+    const sorted = [...readings].sort((a, b) => a.slot - b.slot)
+    setRows(
+      sorted.map((r) => ({
+        nozzleId: r.nozzleId,
+        nozzleName: r.nozzleName,
+        fuelType: r.fuelType,
+        slot: r.slot,
+        openingCumVolume: r.openingCumVolume,
+        openingCumSale: r.openingCumSale,
+        closingCumVolume: '',
+        closingCumSale: '',
+      })),
+    )
+  }, [hydrated, readings, rows.length])
+
+  function updateRow(idx: number, patch: Partial<ClosingRowState>): void {
+    setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)))
+  }
+
+  // Live calculations from local form state (no useEffect setState loop)
+  interface RowDelta {
+    litres: number
+    rupees: number
+    invalid: boolean
+  }
+  function rowDelta(r: ClosingRowState): RowDelta {
+    const cv = r.closingCumVolume === '' ? null : Number(r.closingCumVolume)
+    const cs = r.closingCumSale === '' ? null : Number(r.closingCumSale)
+    const hasBoth = cv !== null && cs !== null && !Number.isNaN(cv) && !Number.isNaN(cs)
+    if (!hasBoth) return { litres: 0, rupees: 0, invalid: false }
+    const litres = cv - r.openingCumVolume
+    const rupees = cs - r.openingCumSale
+    const invalid = cv < r.openingCumVolume || cs < r.openingCumSale
+    return { litres, rupees, invalid }
+  }
+
+  const allRowsFilled =
+    rows.length > 0 && rows.every((r) => r.closingCumVolume !== '' && r.closingCumSale !== '')
+  const anyInvalid = rows.some((r) => rowDelta(r).invalid)
+
+  // One pass over rows produces every total + per-fuel split.
+  // `Math.max(0, ...)` keeps invalid (negative) deltas from polluting totals
+  // before the user fixes them; submit is blocked separately by `anyInvalid`.
+  const totals = rows.reduce(
+    (acc, r) => {
+      const { litres, rupees } = rowDelta(r)
+      const L = Math.max(0, litres)
+      const R = Math.max(0, rupees)
+      acc.totalLitres += L
+      acc.totalRevenue += R
+      if (r.fuelType === 'MS') {
+        acc.msLitres += L
+        acc.msRevenue += R
+      } else {
+        acc.hsdLitres += L
+        acc.hsdRevenue += R
+      }
+      return acc
+    },
+    { totalLitres: 0, totalRevenue: 0, msLitres: 0, hsdLitres: 0, msRevenue: 0, hsdRevenue: 0 },
+  )
+  const { totalLitres, totalRevenue, msLitres, hsdLitres, msRevenue, hsdRevenue } = totals
+
+  const cashFilled = cashCollected !== ''
+  const cashNum = cashFilled ? Number(cashCollected) : 0
+  const cashVariance = cashFilled ? cashNum - totalRevenue : 0
+
+  async function handleSubmit(e: React.FormEvent): Promise<void> {
+    e.preventDefault()
+    setError(null)
+    if (anyInvalid) {
+      setError('Closing values cannot be less than opening for any field.')
+      return
+    }
+    if (!allRowsFilled) {
+      setError('Enter closing values for all nozzles.')
+      return
+    }
+    if (!cashFilled) {
+      setError('Enter the cash collected.')
+      return
+    }
+    setSubmitting(true)
+    try {
+      await closeShift({
+        shiftId: shift.id,
+        closings: rows.map((r) => ({
+          nozzleId: r.nozzleId,
+          closingCumVolume: Number(r.closingCumVolume),
+          closingCumSale: Number(r.closingCumSale),
+        })),
+        cashCollected: cashNum,
+      })
+      onClose()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to close shift')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex sm:items-center sm:justify-center z-50" onClick={onClose}>
-      <div className="bg-surface-container-lowest w-full h-full sm:h-auto sm:max-w-lg sm:mx-4 sm:rounded-2xl sm:max-h-[90vh] shadow-xl p-4 sm:p-6 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-on-surface text-lg font-semibold mb-1">Edit Shift</h2>
-        <p className="text-on-surface-variant text-sm mb-5">{shift.salesmanName} · {new Date(shift.openedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</p>
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-on-surface-variant text-sm font-medium">MS Litres Sold</label>
-              <input type="number" min="0" step="0.01" inputMode="decimal" value={msLitres} onChange={(e) => setMsLitres(e.target.value)}
-                className="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-on-surface-variant text-sm font-medium">HSD Litres Sold</label>
-              <input type="number" min="0" step="0.01" inputMode="decimal" value={hsdLitres} onChange={(e) => setHsdLitres(e.target.value)}
-                className="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
-            </div>
-          </div>
-          <div className="px-3 py-2.5 rounded-xl bg-surface-container text-sm text-on-surface-variant flex flex-col sm:flex-row sm:flex-wrap gap-1 sm:gap-3 break-words">
-            <span>Expected Cash: <span className="text-on-surface font-medium">₹{expectedCash.toLocaleString('en-IN')}</span></span>
-            {cashCollected !== '' && (
-              <span className={cn('font-medium', cashVariance >= 0 ? 'text-emerald-600' : 'text-rose-600')}>
-                Variance: {cashVariance >= 0 ? '+' : ''}₹{cashVariance.toLocaleString('en-IN')}
-              </span>
+    <div
+      className="fixed inset-0 bg-black/40 flex sm:items-center sm:justify-center z-50"
+      onClick={onClose}
+    >
+      <div
+        className="bg-surface-container-lowest w-full h-full sm:h-auto sm:max-w-3xl sm:mx-4 sm:rounded-2xl sm:max-h-[90vh] shadow-xl p-4 sm:p-6 overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-on-surface text-lg font-semibold mb-1">Close Shift</h2>
+        <p className="text-on-surface-variant text-sm mb-5">
+          {shift.salesmanName} · opened {formatTime(shift.openedAt)}
+        </p>
+
+        {!hydrated ? (
+          <p className="text-on-surface-variant text-sm">Loading…</p>
+        ) : rows.length === 0 ? (
+          <p className="text-on-surface-variant text-sm">No nozzle readings to close.</p>
+        ) : (
+          <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+            {/* Per-nozzle rows */}
+            <section className="flex flex-col gap-3">
+              <h3 className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider">
+                Meter Readings
+              </h3>
+              {rows.map((r, i) => {
+                const d = rowDelta(r)
+                return (
+                  <div
+                    key={r.nozzleId}
+                    className="px-3 py-3 rounded-xl border border-outline-variant bg-surface-container/40 flex flex-col gap-2"
+                  >
+                    <div className="text-on-surface text-sm font-medium">
+                      Nozzle {r.slot} — {FUEL_LABELS[r.fuelType]} — {r.nozzleName}
+                    </div>
+
+                    {/* Start (read-only) */}
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-on-surface-variant uppercase tracking-wider">
+                          Start CumVolume
+                        </span>
+                        <span className="text-on-surface font-medium">
+                          {r.openingCumVolume.toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-on-surface-variant uppercase tracking-wider">
+                          Start CumSale
+                        </span>
+                        <span className="text-on-surface font-medium">
+                          ₹{r.openingCumSale.toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* End (inputs) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-on-surface-variant text-xs">End CumVolume</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          inputMode="decimal"
+                          value={r.closingCumVolume}
+                          onChange={(e) => updateRow(i, { closingCumVolume: e.target.value })}
+                          placeholder="Closing"
+                          className={cn(
+                            'w-full px-3 py-2.5 sm:py-2 rounded-xl border bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30',
+                            r.closingCumVolume !== '' &&
+                              Number(r.closingCumVolume) < r.openingCumVolume
+                              ? 'border-rose-300'
+                              : 'border-outline-variant',
+                          )}
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-on-surface-variant text-xs">End CumSale (₹)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          inputMode="decimal"
+                          value={r.closingCumSale}
+                          onChange={(e) => updateRow(i, { closingCumSale: e.target.value })}
+                          placeholder="Closing"
+                          className={cn(
+                            'w-full px-3 py-2.5 sm:py-2 rounded-xl border bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30',
+                            r.closingCumSale !== '' &&
+                              Number(r.closingCumSale) < r.openingCumSale
+                              ? 'border-rose-300'
+                              : 'border-outline-variant',
+                          )}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Delta (live) */}
+                    <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-outline-variant">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-on-surface-variant uppercase tracking-wider">
+                          Δ Litres
+                        </span>
+                        <span
+                          className={cn(
+                            'font-medium',
+                            d.invalid
+                              ? 'text-rose-600'
+                              : d.litres > 0
+                              ? 'text-on-surface'
+                              : 'text-on-surface-variant',
+                          )}
+                        >
+                          {d.litres.toLocaleString('en-IN')} L
+                        </span>
+                      </div>
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-on-surface-variant uppercase tracking-wider">
+                          Δ Sale
+                        </span>
+                        <span
+                          className={cn(
+                            'font-medium',
+                            d.invalid
+                              ? 'text-rose-600'
+                              : d.rupees > 0
+                              ? 'text-on-surface'
+                              : 'text-on-surface-variant',
+                          )}
+                        >
+                          ₹{d.rupees.toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </section>
+
+            {/* Sub-totals */}
+            <section className="flex flex-col gap-2">
+              <h3 className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider">
+                Totals
+              </h3>
+              <div className="grid grid-cols-2 gap-2 px-3 py-3 rounded-xl bg-surface-container">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-xs text-on-surface-variant uppercase tracking-wider">
+                    Total Volume
+                  </span>
+                  <span className="text-on-surface font-semibold">
+                    {totalLitres.toLocaleString('en-IN')} L
+                  </span>
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-xs text-on-surface-variant uppercase tracking-wider">
+                    Total Revenue
+                  </span>
+                  <span className="text-on-surface font-semibold">
+                    {formatINR(totalRevenue)}
+                  </span>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs px-3 py-2 rounded-xl bg-surface-container/60 break-words">
+                <span className="text-on-surface-variant">
+                  MS Litres:{' '}
+                  <span className="text-on-surface font-medium">
+                    {msLitres.toLocaleString('en-IN')} L
+                  </span>
+                </span>
+                <span className="text-on-surface-variant">
+                  HSD Litres:{' '}
+                  <span className="text-on-surface font-medium">
+                    {hsdLitres.toLocaleString('en-IN')} L
+                  </span>
+                </span>
+                <span className="text-on-surface-variant">
+                  MS Revenue:{' '}
+                  <span className="text-on-surface font-medium">
+                    ₹{msRevenue.toLocaleString('en-IN')}
+                  </span>
+                </span>
+                <span className="text-on-surface-variant">
+                  HSD Revenue:{' '}
+                  <span className="text-on-surface font-medium">
+                    ₹{hsdRevenue.toLocaleString('en-IN')}
+                  </span>
+                </span>
+              </div>
+            </section>
+
+            {/* Cash */}
+            <section className="flex flex-col gap-3">
+              <h3 className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider">
+                Cash
+              </h3>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-on-surface-variant text-sm font-medium">
+                  Cash Collected (₹)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  value={cashCollected}
+                  onChange={(e) => setCashCollected(e.target.value)}
+                  placeholder="Enter amount"
+                  className="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+              </div>
+              <div className="px-3 py-2.5 rounded-xl bg-surface-container text-sm flex flex-col gap-1 break-words">
+                <span className="text-on-surface-variant">
+                  Expected:{' '}
+                  <span className="text-on-surface font-medium">
+                    ₹{totalRevenue.toLocaleString('en-IN')}
+                  </span>
+                </span>
+                {cashCollected !== '' && (
+                  <span
+                    className={cn(
+                      'font-medium',
+                      cashVariance >= 0 ? 'text-emerald-600' : 'text-rose-600',
+                    )}
+                  >
+                    Variance: {cashVariance >= 0 ? '+' : ''}₹
+                    {cashVariance.toLocaleString('en-IN')}
+                  </span>
+                )}
+              </div>
+            </section>
+
+            {error && (
+              <div className="px-3 py-2 rounded-xl border border-rose-200 bg-rose-50 text-sm text-rose-700">
+                {error}
+              </div>
             )}
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-on-surface-variant text-sm font-medium">Actual Cash Collected ₹</label>
-            <input type="number" min="0" step="0.01" inputMode="decimal" value={cashCollected} onChange={(e) => setCashCollected(e.target.value)}
-              className="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-on-surface-variant text-sm font-medium">DIP Variance %</label>
-            <input type="number" min="0" step="0.01" inputMode="decimal" value={dipVariancePct} onChange={(e) => setDipVariancePct(e.target.value)}
-              className="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-on-surface-variant text-sm font-medium">Notes (optional)</label>
-            <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)}
-              className="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none" />
-          </div>
-          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 mt-1">
-            <button type="button" onClick={onClose} className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-xl text-sm font-medium text-on-surface-variant bg-surface-container hover:bg-surface-container-high transition-colors">Cancel</button>
-            <button type="submit" disabled={submitting} className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-xl text-sm font-medium bg-primary text-on-primary hover:opacity-90 transition-opacity disabled:opacity-60">
-              {submitting ? 'Saving…' : 'Save Changes'}
-            </button>
-          </div>
-        </form>
+
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 mt-1">
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-xl text-sm font-medium text-on-surface-variant bg-surface-container hover:bg-surface-container-high transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submitting || anyInvalid || !allRowsFilled || !cashFilled}
+                className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-xl text-sm font-medium bg-primary text-on-primary hover:opacity-90 transition-opacity disabled:opacity-60"
+              >
+                {submitting ? 'Closing…' : 'Close Shift'}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   )
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Closed-shift detail (per-nozzle breakdown card)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface ShiftDetailProps {
+  shiftId: string
+}
+
+function ShiftDetail({ shiftId }: ShiftDetailProps) {
+  const loadNozzleReadings = useShiftsStore((s) => s.loadNozzleReadings)
+  const readings = useShiftsStore((s) =>
+    s.nozzleReadings.filter((r) => r.shiftId === shiftId),
+  )
+
+  useEffect(() => {
+    if (readings.length === 0) {
+      loadNozzleReadings(shiftId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shiftId])
+
+  const sorted: NozzleReading[] = [...readings].sort((a, b) => a.slot - b.slot)
+
+  if (sorted.length === 0) {
+    return (
+      <div className="px-3 py-3 rounded-xl bg-surface-container text-sm text-on-surface-variant">
+        Loading nozzle readings…
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {sorted.map((r) => (
+        <div
+          key={r.id}
+          className="px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container/40"
+        >
+          <div className="text-on-surface text-sm font-medium">
+            Nozzle {r.slot} — {FUEL_LABELS[r.fuelType]} — {r.nozzleName}
+          </div>
+          <div className="mt-1 grid grid-cols-2 gap-1 text-xs text-on-surface-variant">
+            <span>
+              Start Vol:{' '}
+              <span className="text-on-surface font-medium">
+                {r.openingCumVolume.toLocaleString('en-IN')}
+              </span>
+            </span>
+            <span>
+              End Vol:{' '}
+              <span className="text-on-surface font-medium">
+                {r.closingCumVolume != null
+                  ? r.closingCumVolume.toLocaleString('en-IN')
+                  : '—'}
+              </span>
+            </span>
+            <span>
+              Litres Sold:{' '}
+              <span className="text-on-surface font-medium">
+                {r.litresSold.toLocaleString('en-IN')} L
+              </span>
+            </span>
+            <span>
+              Rupees:{' '}
+              <span className="text-on-surface font-medium">
+                ₹{r.rupeesSold.toLocaleString('en-IN')}
+              </span>
+            </span>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Page
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function ShiftsPage() {
-  const { shifts, loading, dateFilter, statusFilter, setDateFilter, setStatusFilter, openShift, closeShift, editShift, deleteShift, flagShift } =
-    useShiftsStore()
-  const { users, fuelPrices } = useAppStore()
+  const {
+    shifts,
+    loading,
+    dateFilter,
+    statusFilter,
+    setDateFilter,
+    setStatusFilter,
+    deleteShift,
+    flagShift,
+  } = useShiftsStore()
+  const { users, dispenserUnits } = useAppStore()
   const currentUser = useAuthStore((s) => s.currentUser)
 
   const [openShiftModal, setOpenShiftModal] = useState(false)
   const [shiftToClose, setShiftToClose] = useState<Shift | null>(null)
-  const [shiftToEdit, setShiftToEdit] = useState<Shift | null>(null)
+  const [shiftToEditOpenings, setShiftToEditOpenings] = useState<Shift | null>(null)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   if (!currentUser) return null
 
@@ -329,9 +960,13 @@ export default function ShiftsPage() {
       ? filteredShifts.filter((s) => s.salesmanId === currentUser.id)
       : filteredShifts
 
-  function handleDelete(shift: Shift) {
+  function handleDelete(shift: Shift): void {
     if (!confirm(`Delete this shift for ${shift.salesmanName}? This cannot be undone.`)) return
     deleteShift(shift.id)
+  }
+
+  function toggleExpand(id: string): void {
+    setExpandedId((prev) => (prev === id ? null : id))
   }
 
   return (
@@ -397,73 +1032,129 @@ export default function ShiftsPage() {
                 No shifts found
               </div>
             ) : (
-              displayedShifts.map((shift) => (
-                <div key={shift.id} className="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm p-4 flex flex-col gap-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="font-medium text-on-surface truncate">{shift.salesmanName}</div>
-                      <div className="text-on-surface-variant text-xs">
-                        {new Date(shift.openedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+              displayedShifts.map((shift) => {
+                const expanded = expandedId === shift.id
+                return (
+                  <div
+                    key={shift.id}
+                    className="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm p-4 flex flex-col gap-3"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => toggleExpand(shift.id)}
+                      className="flex items-start justify-between gap-3 text-left"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="font-semibold text-on-surface truncate">
+                          {duLabel(dispenserUnits, shift.dispenserUnitId)} ·{' '}
+                          {shift.salesmanName}
+                        </div>
+                        <div className="text-on-surface-variant text-xs">
+                          {formatDate(shift.openedAt)} · {formatTime(shift.openedAt)} →{' '}
+                          {formatTime(shift.closedAt)}
+                        </div>
+                      </div>
+                      <span
+                        className={cn(
+                          'shrink-0 px-2 py-1 rounded-full text-xs font-semibold capitalize',
+                          STATUS_STYLES[shift.status] ?? 'bg-gray-100 text-gray-500',
+                        )}
+                      >
+                        {shift.status}
+                      </span>
+                    </button>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-on-surface-variant uppercase tracking-wider">
+                          Litres
+                        </span>
+                        <span className="text-on-surface font-medium break-words">
+                          {shift.totalLitresSold > 0
+                            ? `${shift.totalLitresSold.toLocaleString('en-IN')} L`
+                            : '—'}
+                        </span>
+                      </div>
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-on-surface-variant uppercase tracking-wider">
+                          Revenue
+                        </span>
+                        <span className="text-on-surface font-medium break-words">
+                          {shift.totalRevenue > 0
+                            ? `₹${shift.totalRevenue.toLocaleString('en-IN')}`
+                            : '—'}
+                        </span>
+                      </div>
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-on-surface-variant uppercase tracking-wider">
+                          Cash
+                        </span>
+                        <span className="text-on-surface font-medium break-words">
+                          {shift.totalCashCollected > 0
+                            ? `₹${shift.totalCashCollected.toLocaleString('en-IN')}`
+                            : '—'}
+                        </span>
+                      </div>
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-on-surface-variant uppercase tracking-wider">
+                          Cash Var.
+                        </span>
+                        {shift.cashVariance !== 0 ? (
+                          <span
+                            className={cn(
+                              'font-medium break-words',
+                              shift.cashVariance < 0 ? 'text-rose-600' : 'text-emerald-600',
+                            )}
+                          >
+                            {shift.cashVariance > 0 ? '+' : ''}₹
+                            {shift.cashVariance.toLocaleString('en-IN')}
+                          </span>
+                        ) : (
+                          <span className="text-on-surface-variant">—</span>
+                        )}
                       </div>
                     </div>
-                    <span className={cn('shrink-0 px-2 py-1 rounded-full text-xs font-semibold capitalize', STATUS_STYLES[shift.status] ?? 'bg-gray-100 text-gray-500')}>
-                      {shift.status}
-                    </span>
+
+                    {expanded && shift.status !== 'open' && <ShiftDetail shiftId={shift.id} />}
+
+                    <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-outline-variant">
+                      {shift.status === 'open' && (
+                        <button
+                          onClick={() => setShiftToClose(shift)}
+                          className="px-3 py-1.5 rounded-lg text-xs font-medium border border-blue-300 text-blue-700 hover:bg-blue-50 transition-colors"
+                        >
+                          Close
+                        </button>
+                      )}
+                      {isOwnerOrManager && shift.status === 'open' && (
+                        <button
+                          onClick={() => setShiftToEditOpenings(shift)}
+                          className="px-3 py-1.5 rounded-lg text-xs font-medium border border-outline-variant text-on-surface-variant hover:bg-surface-container transition-colors"
+                        >
+                          Edit Openings
+                        </button>
+                      )}
+                      {isOwnerOrManager && shift.status === 'closed' && (
+                        <button
+                          onClick={() => flagShift(shift.id)}
+                          className="px-3 py-1.5 rounded-lg text-xs font-medium border border-rose-300 text-rose-700 hover:bg-rose-50 transition-colors"
+                        >
+                          Flag
+                        </button>
+                      )}
+                      {isOwnerOrManager && shift.status !== 'open' && (
+                        <button
+                          onClick={() => handleDelete(shift)}
+                          className="ml-auto p-1.5 rounded-lg text-on-surface-variant hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                          aria-label="Delete shift"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">delete</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-on-surface-variant uppercase tracking-wider">Litres</span>
-                      <span className="text-on-surface font-medium break-words">
-                        {shift.totalLitresSold > 0 ? `${shift.totalLitresSold.toLocaleString('en-IN')} L` : '—'}
-                      </span>
-                    </div>
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-on-surface-variant uppercase tracking-wider">Revenue</span>
-                      <span className="text-on-surface font-medium break-words">
-                        {shift.totalCashCollected > 0 ? `₹${shift.totalCashCollected.toLocaleString('en-IN')}` : '—'}
-                      </span>
-                    </div>
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-on-surface-variant uppercase tracking-wider">Cash Var.</span>
-                      {shift.cashVariance !== 0 ? (
-                        <span className={cn('font-medium break-words', shift.cashVariance < 0 ? 'text-rose-600' : 'text-emerald-600')}>
-                          {shift.cashVariance > 0 ? '+' : ''}₹{shift.cashVariance.toLocaleString('en-IN')}
-                        </span>
-                      ) : <span className="text-on-surface-variant">—</span>}
-                    </div>
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-on-surface-variant uppercase tracking-wider">DIP Var.</span>
-                      {shift.dipVariancePct > 0 ? (
-                        <span className={cn('font-medium', shift.dipVariancePct > 2 ? 'text-red-600' : shift.dipVariancePct > 0.5 ? 'text-amber-600' : 'text-emerald-600')}>
-                          {shift.dipVariancePct}%
-                        </span>
-                      ) : <span className="text-on-surface-variant">—</span>}
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-outline-variant">
-                    {shift.status === 'open' && (
-                      <button onClick={() => setShiftToClose(shift)} className="px-3 py-1.5 rounded-lg text-xs font-medium border border-blue-300 text-blue-700 hover:bg-blue-50 transition-colors">
-                        Close
-                      </button>
-                    )}
-                    {shift.status !== 'open' && (
-                      <button onClick={() => setShiftToEdit(shift)} className="px-3 py-1.5 rounded-lg text-xs font-medium border border-outline-variant text-on-surface-variant hover:bg-surface-container transition-colors">
-                        Edit
-                      </button>
-                    )}
-                    {isOwnerOrManager && shift.status === 'open' && (
-                      <button onClick={() => flagShift(shift.id)} className="px-3 py-1.5 rounded-lg text-xs font-medium border border-rose-300 text-rose-700 hover:bg-rose-50 transition-colors">
-                        Flag
-                      </button>
-                    )}
-                    {isOwnerOrManager && (
-                      <button onClick={() => handleDelete(shift)} className="ml-auto p-1.5 rounded-lg text-on-surface-variant hover:text-rose-600 hover:bg-rose-50 transition-colors" aria-label="Delete shift">
-                        <span className="material-symbols-outlined text-[18px]">delete</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))
+                )
+              })
             )}
           </div>
 
@@ -472,8 +1163,20 @@ export default function ShiftsPage() {
             <table className="w-full text-sm">
               <thead className="bg-surface-container-low border-b border-outline-variant">
                 <tr>
-                  {['Salesman', 'Date', 'Litres', 'Revenue', 'Cash Variance', 'DIP Var%', 'Status', 'Actions'].map((h) => (
-                    <th key={h} className="text-left px-5 py-3 text-on-surface-variant font-semibold text-xs uppercase tracking-wider whitespace-nowrap">
+                  {[
+                    'DU',
+                    'Salesman',
+                    'Time',
+                    'Litres',
+                    'Revenue',
+                    'Cash Variance',
+                    'Status',
+                    'Actions',
+                  ].map((h) => (
+                    <th
+                      key={h}
+                      className="text-left px-5 py-3 text-on-surface-variant font-semibold text-xs uppercase tracking-wider whitespace-nowrap"
+                    >
                       {h}
                     </th>
                   ))}
@@ -482,66 +1185,125 @@ export default function ShiftsPage() {
               <tbody>
                 {displayedShifts.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-5 py-8 text-center text-on-surface-variant text-sm">No shifts found</td>
+                    <td
+                      colSpan={8}
+                      className="px-5 py-8 text-center text-on-surface-variant text-sm"
+                    >
+                      No shifts found
+                    </td>
                   </tr>
                 ) : (
-                  displayedShifts.map((shift, i) => (
-                    <tr key={shift.id} className={cn('border-b border-outline-variant last:border-0', i % 2 ? 'bg-surface-container-low/30' : '')}>
-                      <td className="px-5 py-3 font-medium text-on-surface whitespace-nowrap">{shift.salesmanName}</td>
-                      <td className="px-5 py-3 text-on-surface-variant whitespace-nowrap">
-                        {new Date(shift.openedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
-                      </td>
-                      <td className="px-5 py-3 text-on-surface text-right whitespace-nowrap">
-                        {shift.totalLitresSold > 0 ? `${shift.totalLitresSold.toLocaleString('en-IN')} L` : '—'}
-                      </td>
-                      <td className="px-5 py-3 text-on-surface text-right whitespace-nowrap">
-                        {shift.totalCashCollected > 0 ? `₹${shift.totalCashCollected.toLocaleString('en-IN')}` : '—'}
-                      </td>
-                      <td className="px-5 py-3 text-right whitespace-nowrap">
-                        {shift.cashVariance !== 0 ? (
-                          <span className={cn('font-medium', shift.cashVariance < 0 ? 'text-rose-600' : 'text-emerald-600')}>
-                            {shift.cashVariance > 0 ? '+' : ''}₹{shift.cashVariance.toLocaleString('en-IN')}
-                          </span>
-                        ) : <span className="text-on-surface-variant">—</span>}
-                      </td>
-                      <td className="px-5 py-3 text-right whitespace-nowrap">
-                        {shift.dipVariancePct > 0 ? (
-                          <span className={cn('font-medium', shift.dipVariancePct > 2 ? 'text-red-600' : shift.dipVariancePct > 0.5 ? 'text-amber-600' : 'text-emerald-600')}>
-                            {shift.dipVariancePct}%
-                          </span>
-                        ) : <span className="text-on-surface-variant">—</span>}
-                      </td>
-                      <td className="px-5 py-3 whitespace-nowrap">
-                        <span className={cn('px-2 py-1 rounded-full text-xs font-semibold capitalize', STATUS_STYLES[shift.status] ?? 'bg-gray-100 text-gray-500')}>
-                          {shift.status}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          {shift.status === 'open' && (
-                            <button onClick={() => setShiftToClose(shift)} className="px-3 py-1 rounded-lg text-xs font-medium border border-blue-300 text-blue-700 hover:bg-blue-50 transition-colors">
-                              Close
-                            </button>
+                  displayedShifts.map((shift, i) => {
+                    const expanded = expandedId === shift.id
+                    return (
+                      <Fragment key={shift.id}>
+                        <tr
+                          onClick={() => toggleExpand(shift.id)}
+                          className={cn(
+                            'border-b border-outline-variant cursor-pointer hover:bg-surface-container-low/50',
+                            i % 2 ? 'bg-surface-container-low/30' : '',
                           )}
-                          {shift.status !== 'open' && (
-                            <button onClick={() => setShiftToEdit(shift)} className="px-3 py-1 rounded-lg text-xs font-medium border border-outline-variant text-on-surface-variant hover:bg-surface-container transition-colors">
-                              Edit
-                            </button>
-                          )}
-                          {isOwnerOrManager && shift.status === 'open' && (
-                            <button onClick={() => flagShift(shift.id)} className="px-3 py-1 rounded-lg text-xs font-medium border border-rose-300 text-rose-700 hover:bg-rose-50 transition-colors">
-                              Flag
-                            </button>
-                          )}
-                          {isOwnerOrManager && (
-                            <button onClick={() => handleDelete(shift)} className="p-1 rounded-lg text-on-surface-variant hover:text-rose-600 hover:bg-rose-50 transition-colors">
-                              <span className="material-symbols-outlined text-[16px]">delete</span>
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                        >
+                          <td className="px-5 py-3 font-semibold text-on-surface whitespace-nowrap">
+                            {duLabel(dispenserUnits, shift.dispenserUnitId)}
+                          </td>
+                          <td className="px-5 py-3 font-medium text-on-surface whitespace-nowrap">
+                            {shift.salesmanName}
+                          </td>
+                          <td className="px-5 py-3 text-on-surface-variant whitespace-nowrap">
+                            {formatDate(shift.openedAt)} · {formatTime(shift.openedAt)} →{' '}
+                            {formatTime(shift.closedAt)}
+                          </td>
+                          <td className="px-5 py-3 text-on-surface text-right whitespace-nowrap">
+                            {shift.totalLitresSold > 0
+                              ? `${shift.totalLitresSold.toLocaleString('en-IN')} L`
+                              : '—'}
+                          </td>
+                          <td className="px-5 py-3 text-on-surface text-right whitespace-nowrap">
+                            {shift.totalRevenue > 0
+                              ? `₹${shift.totalRevenue.toLocaleString('en-IN')}`
+                              : '—'}
+                          </td>
+                          <td className="px-5 py-3 text-right whitespace-nowrap">
+                            {shift.cashVariance !== 0 ? (
+                              <span
+                                className={cn(
+                                  'font-medium',
+                                  shift.cashVariance < 0
+                                    ? 'text-rose-600'
+                                    : 'text-emerald-600',
+                                )}
+                              >
+                                {shift.cashVariance > 0 ? '+' : ''}₹
+                                {shift.cashVariance.toLocaleString('en-IN')}
+                              </span>
+                            ) : (
+                              <span className="text-on-surface-variant">—</span>
+                            )}
+                          </td>
+                          <td className="px-5 py-3 whitespace-nowrap">
+                            <span
+                              className={cn(
+                                'px-2 py-1 rounded-full text-xs font-semibold capitalize',
+                                STATUS_STYLES[shift.status] ?? 'bg-gray-100 text-gray-500',
+                              )}
+                            >
+                              {shift.status}
+                            </span>
+                          </td>
+                          <td
+                            className="px-5 py-3 whitespace-nowrap"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div className="flex items-center gap-2">
+                              {shift.status === 'open' && (
+                                <button
+                                  onClick={() => setShiftToClose(shift)}
+                                  className="px-3 py-1 rounded-lg text-xs font-medium border border-blue-300 text-blue-700 hover:bg-blue-50 transition-colors"
+                                >
+                                  Close
+                                </button>
+                              )}
+                              {isOwnerOrManager && shift.status === 'open' && (
+                                <button
+                                  onClick={() => setShiftToEditOpenings(shift)}
+                                  className="px-3 py-1 rounded-lg text-xs font-medium border border-outline-variant text-on-surface-variant hover:bg-surface-container transition-colors"
+                                >
+                                  Edit Openings
+                                </button>
+                              )}
+                              {isOwnerOrManager && shift.status === 'closed' && (
+                                <button
+                                  onClick={() => flagShift(shift.id)}
+                                  className="px-3 py-1 rounded-lg text-xs font-medium border border-rose-300 text-rose-700 hover:bg-rose-50 transition-colors"
+                                >
+                                  Flag
+                                </button>
+                              )}
+                              {isOwnerOrManager && shift.status !== 'open' && (
+                                <button
+                                  onClick={() => handleDelete(shift)}
+                                  className="p-1 rounded-lg text-on-surface-variant hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                                  aria-label="Delete shift"
+                                >
+                                  <span className="material-symbols-outlined text-[16px]">
+                                    delete
+                                  </span>
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                        {expanded && shift.status !== 'open' && (
+                          <tr className="border-b border-outline-variant">
+                            <td colSpan={8} className="px-5 py-3 bg-surface-container/30">
+                              <ShiftDetail shiftId={shift.id} />
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    )
+                  })
                 )}
               </tbody>
             </table>
@@ -552,27 +1314,20 @@ export default function ShiftsPage() {
       {openShiftModal && (
         <OpenShiftModal
           users={users}
+          dispenserUnits={dispenserUnits}
           currentUser={currentUser}
           onClose={() => setOpenShiftModal(false)}
-          onSubmit={async (salesmanId, salesmanName) => { await openShift(salesmanId, salesmanName) }}
         />
       )}
 
       {shiftToClose && (
-        <CloseShiftModal
-          shift={shiftToClose}
-          fuelPrices={fuelPrices}
-          onClose={() => setShiftToClose(null)}
-          onSubmit={closeShift}
-        />
+        <CloseShiftModal shift={shiftToClose} onClose={() => setShiftToClose(null)} />
       )}
 
-      {shiftToEdit && (
-        <EditShiftModal
-          shift={shiftToEdit}
-          fuelPrices={fuelPrices}
-          onClose={() => setShiftToEdit(null)}
-          onSubmit={editShift}
+      {shiftToEditOpenings && isOwnerOrManager && (
+        <EditOpeningReadingsModal
+          shift={shiftToEditOpenings}
+          onClose={() => setShiftToEditOpenings(null)}
         />
       )}
     </div>

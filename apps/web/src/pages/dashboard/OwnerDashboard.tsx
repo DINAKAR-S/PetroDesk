@@ -113,7 +113,7 @@ export default function OwnerDashboard() {
                 <div className="flex justify-between items-center gap-3 mb-3">
                   <div className="min-w-0">
                     <p className="text-on-surface font-semibold truncate">{tank.name}</p>
-                    <p className="text-on-surface-variant text-xs">{tank.fuelType === 'MS' ? 'Petrol (MS)' : tank.fuelType === 'HSD' ? 'Diesel (HSD)' : 'Premium (XP)'}</p>
+                    <p className="text-on-surface-variant text-xs">{tank.fuelType === 'MS' ? 'Petrol (MS)' : 'Diesel (HSD)'}</p>
                   </div>
                   <p className={cn('text-xl sm:text-2xl font-bold shrink-0', isLow ? 'text-red-600' : isMed ? 'text-amber-600' : 'text-emerald-600')}>
                     {pct}%
@@ -181,14 +181,6 @@ export default function OwnerDashboard() {
                           </p>
                         ) : <p className="text-on-surface-variant">—</p>}
                       </div>
-                      <div>
-                        <p className="text-xs text-on-surface-variant">DIP Var%</p>
-                        {shift.dipVariancePct > 0 ? (
-                          <p className={cn('font-medium', shift.dipVariancePct > 2 ? 'text-red-600' : shift.dipVariancePct > 0.5 ? 'text-amber-600' : 'text-emerald-600')}>
-                            {shift.dipVariancePct}%
-                          </p>
-                        ) : <p className="text-on-surface-variant">—</p>}
-                      </div>
                     </div>
                   </div>
                 ))
@@ -199,14 +191,14 @@ export default function OwnerDashboard() {
               <table className="w-full text-sm">
                 <thead className="bg-surface-container-low border-b border-outline-variant">
                   <tr>
-                    {['Salesman', 'Date', 'Litres', 'Revenue', 'Cash Variance', 'DIP Var%', 'Status'].map((h) => (
+                    {['Salesman', 'Date', 'Litres', 'Revenue', 'Cash Variance', 'Status'].map((h) => (
                       <th key={h} className="text-left px-5 py-3 text-on-surface-variant font-semibold text-xs uppercase tracking-wider whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {filteredShifts.length === 0 ? (
-                    <tr><td colSpan={7} className="px-5 py-8 text-center text-on-surface-variant text-sm">No shifts found</td></tr>
+                    <tr><td colSpan={6} className="px-5 py-8 text-center text-on-surface-variant text-sm">No shifts found</td></tr>
                   ) : (
                     filteredShifts.map((shift, i) => (
                       <tr key={shift.id} className={cn('border-b border-outline-variant last:border-0', i % 2 ? 'bg-surface-container-low/30' : '')}>
@@ -224,13 +216,6 @@ export default function OwnerDashboard() {
                           {shift.cashVariance !== 0 ? (
                             <span className={shift.cashVariance < 0 ? 'text-rose-600 font-medium' : 'text-emerald-600 font-medium'}>
                               {shift.cashVariance > 0 ? '+' : ''}₹{shift.cashVariance.toLocaleString('en-IN')}
-                            </span>
-                          ) : <span className="text-on-surface-variant">—</span>}
-                        </td>
-                        <td className="px-5 py-3 text-right">
-                          {shift.dipVariancePct > 0 ? (
-                            <span className={cn('font-medium', shift.dipVariancePct > 2 ? 'text-red-600' : shift.dipVariancePct > 0.5 ? 'text-amber-600' : 'text-emerald-600')}>
-                              {shift.dipVariancePct}%
                             </span>
                           ) : <span className="text-on-surface-variant">—</span>}
                         </td>

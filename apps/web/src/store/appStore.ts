@@ -1,21 +1,25 @@
 import { create } from 'zustand'
 import { supabase } from '@/lib/supabase'
 import { BUNK_ID } from '@/lib/constants'
-import { makeId } from '@/lib/utils'
-import type { BunkProfile, Tank, Nozzle, User, FuelPrice } from '@/types'
+import type { BunkProfile, Tank, Nozzle, NozzleSlot, User, FuelPrice, DispenserUnit } from '@/types'
 
 interface AppState {
   bunk: BunkProfile
   tanks: Tank[]
   nozzles: Nozzle[]
+  dispenserUnits: DispenserUnit[]
   users: User[]
   fuelPrices: FuelPrice[]
   loading: boolean
   loadAll: () => Promise<void>
+  loadDispenserUnits: () => Promise<void>
   updateBunk: (data: Partial<BunkProfile>) => Promise<void>
   addTank: (t: Omit<Tank, 'id'>) => Promise<void>
   updateTank: (id: string, data: Partial<Tank>) => Promise<void>
   deleteTank: (id: string) => Promise<void>
+  addDispenserUnit: (d: Omit<DispenserUnit, 'id'>) => Promise<void>
+  updateDispenserUnit: (id: string, data: Partial<DispenserUnit>) => Promise<void>
+  deleteDispenserUnit: (id: string) => Promise<void>
   addNozzle: (n: Omit<Nozzle, 'id'>) => Promise<void>
   updateNozzle: (id: string, data: Partial<Nozzle>) => Promise<void>
   deleteNozzle: (id: string) => Promise<void>
@@ -37,6 +41,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   bunk: FALLBACK_BUNK,
   tanks: [],
   nozzles: [],
+  dispenserUnits: [],
   users: [],
   fuelPrices: [],
   loading: false,
@@ -44,10 +49,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadAll: async () => {
     set({ loading: true })
     try {
-      const [bunkRes, tanksRes, nozzlesRes, staffRes, pricesRes] = await Promise.all([
+      const [bunkRes, tanksRes, nozzlesRes, dispenserUnitsRes, staffRes, pricesRes] = await Promise.all([
         supabase.from('bunks').select('*').eq('id', BUNK_ID).single(),
         supabase.from('tanks').select('*').eq('bunk_id', BUNK_ID).order('created_at'),
-        supabase.from('nozzles').select('*').eq('bunk_id', BUNK_ID).order('created_at'),
+        supabase.from('nozzles').select('*').eq('bunk_id', BUNK_ID).order('dispenser_unit_id').order('slot'),
+        supabase.from('dispenser_units').select('*').eq('bunk_id', BUNK_ID).order('number'),
         supabase.from('staff').select('*').eq('bunk_id', BUNK_ID).order('created_at'),
         supabase.from('fuel_prices').select('*').eq('bunk_id', BUNK_ID),
       ])
@@ -64,7 +70,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           tanks: tanksRes.data.map((t: Record<string, unknown>) => ({
             id: t.id as string,
             name: t.name as string,
-            fuelType: t.fuel_type as 'MS' | 'HSD' | 'XP',
+            fuelType: t.fuel_type as 'MS' | 'HSD',
             capacityL: Number(t.capacity_l),
             currentStockL: Number(t.current_stock_l),
           })),
@@ -76,9 +82,20 @@ export const useAppStore = create<AppState>((set, get) => ({
           nozzles: nozzlesRes.data.map((n: Record<string, unknown>) => ({
             id: n.id as string,
             name: n.name as string,
+            dispenserUnitId: n.dispenser_unit_id as string,
             tankId: n.tank_id as string,
-            fuelType: n.fuel_type as 'MS' | 'HSD' | 'XP',
-            currentMeterReading: Number(n.current_meter_reading),
+            slot: Number(n.slot) as NozzleSlot,
+            fuelType: n.fuel_type as 'MS' | 'HSD',
+          })),
+        })
+      }
+
+      if (dispenserUnitsRes.data) {
+        set({
+          dispenserUnits: dispenserUnitsRes.data.map((d: Record<string, unknown>) => ({
+            id: d.id as string,
+            number: d.number as string,
+            displayName: d.display_name as string,
           })),
         })
       }
@@ -99,13 +116,26 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({
           fuelPrices: pricesRes.data.map((p: Record<string, unknown>) => ({
             id: p.id as string,
-            fuelType: p.fuel_type as 'MS' | 'HSD' | 'XP',
+            fuelType: p.fuel_type as 'MS' | 'HSD',
             pricePerLitre: Number(p.price_per_litre),
           })),
         })
       }
     } finally {
       set({ loading: false })
+    }
+  },
+
+  loadDispenserUnits: async () => {
+    const { data } = await supabase.from('dispenser_units').select('*').eq('bunk_id', BUNK_ID).order('number')
+    if (data) {
+      set({
+        dispenserUnits: data.map((d: Record<string, unknown>) => ({
+          id: d.id as string,
+          number: d.number as string,
+          displayName: d.display_name as string,
+        })),
+      })
     }
   },
 
@@ -129,7 +159,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     }).select().single()
     if (data) {
       set((s) => ({
-        tanks: [...s.tanks, { id: data.id, name: data.name, fuelType: data.fuel_type, capacityL: Number(data.capacity_l), currentStockL: Number(data.current_stock_l) }],
+        tanks: [...s.tanks, {
+          id: data.id as string,
+          name: data.name as string,
+          fuelType: data.fuel_type as 'MS' | 'HSD',
+          capacityL: Number(data.capacity_l),
+          currentStockL: Number(data.current_stock_l),
+        }],
       }))
     }
   },
@@ -145,32 +181,141 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   deleteTank: async (id) => {
+    // Block delete in the UI layer if any nozzle still points at this tank.
+    // The DB FK is RESTRICT — surfacing a clear error beats a Postgres "violates foreign key" message.
+    const linked = get().nozzles.some((n) => n.tankId === id)
+    if (linked) {
+      throw new Error('Remove all nozzles linked to this tank first')
+    }
+    const previous = get().tanks
     set((s) => ({ tanks: s.tanks.filter((t) => t.id !== id) }))
-    await supabase.from('tanks').delete().eq('id', id)
+    const { error } = await supabase.from('tanks').delete().eq('id', id)
+    if (error) {
+      // Roll back local state so the UI matches the DB.
+      set({ tanks: previous })
+      throw new Error(error.message)
+    }
   },
 
-  addNozzle: async (n) => {
-    const { data } = await supabase.from('nozzles').insert({
+  addDispenserUnit: async (d) => {
+    const { data } = await supabase.from('dispenser_units').insert({
       bunk_id: BUNK_ID,
-      tank_id: n.tankId,
-      name: n.name,
-      fuel_type: n.fuelType,
-      current_meter_reading: n.currentMeterReading,
+      number: d.number,
+      display_name: d.displayName,
     }).select().single()
     if (data) {
       set((s) => ({
-        nozzles: [...s.nozzles, { id: data.id, name: data.name, tankId: data.tank_id, fuelType: data.fuel_type, currentMeterReading: Number(data.current_meter_reading) }],
+        dispenserUnits: [...s.dispenserUnits, {
+          id: data.id as string,
+          number: data.number as string,
+          displayName: data.display_name as string,
+        }],
+      }))
+    }
+  },
+
+  updateDispenserUnit: async (id, data) => {
+    set((s) => ({
+      dispenserUnits: s.dispenserUnits.map((d) => (d.id === id ? { ...d, ...data } : d)),
+    }))
+    await supabase.from('dispenser_units').update({
+      number: data.number,
+      display_name: data.displayName,
+    }).eq('id', id)
+  },
+
+  deleteDispenserUnit: async (id) => {
+    set((s) => ({ dispenserUnits: s.dispenserUnits.filter((d) => d.id !== id) }))
+    await supabase.from('dispenser_units').delete().eq('id', id)
+  },
+
+  addNozzle: async (n) => {
+    const tank = get().tanks.find((t) => t.id === n.tankId)
+    if (!tank) {
+      throw new Error('Tank not found')
+    }
+    if (tank.fuelType !== n.fuelType) {
+      throw new Error('Tank fuel type does not match nozzle fuel type')
+    }
+    const du = get().dispenserUnits.find((d) => d.id === n.dispenserUnitId)
+    if (!du) {
+      throw new Error('Dispenser unit not found')
+    }
+    const slotTaken = get().nozzles.some(
+      (existing) => existing.dispenserUnitId === n.dispenserUnitId && existing.slot === n.slot
+    )
+    if (slotTaken) {
+      throw new Error('Slot already used in this dispenser unit')
+    }
+
+    const { data } = await supabase.from('nozzles').insert({
+      bunk_id: BUNK_ID,
+      dispenser_unit_id: n.dispenserUnitId,
+      tank_id: n.tankId,
+      slot: n.slot,
+      fuel_type: n.fuelType,
+      name: n.name,
+    }).select().single()
+    if (data) {
+      set((s) => ({
+        nozzles: [...s.nozzles, {
+          id: data.id as string,
+          name: data.name as string,
+          dispenserUnitId: data.dispenser_unit_id as string,
+          tankId: data.tank_id as string,
+          slot: Number(data.slot) as NozzleSlot,
+          fuelType: data.fuel_type as 'MS' | 'HSD',
+        }],
       }))
     }
   },
 
   updateNozzle: async (id, data) => {
+    const current = get().nozzles.find((n) => n.id === id)
+    if (!current) {
+      throw new Error('Nozzle not found')
+    }
+    const nextFuelType = data.fuelType ?? current.fuelType
+    const nextTankId = data.tankId ?? current.tankId
+    const nextDispenserUnitId = data.dispenserUnitId ?? current.dispenserUnitId
+
+    if (data.tankId !== undefined || data.fuelType !== undefined) {
+      const tank = get().tanks.find((t) => t.id === nextTankId)
+      if (!tank) {
+        throw new Error('Tank not found')
+      }
+      if (tank.fuelType !== nextFuelType) {
+        throw new Error('Tank fuel type does not match nozzle fuel type')
+      }
+    }
+
+    if (data.dispenserUnitId !== undefined) {
+      const du = get().dispenserUnits.find((d) => d.id === nextDispenserUnitId)
+      if (!du) {
+        throw new Error('Dispenser unit not found')
+      }
+    }
+
+    // Slot conflict check — a nozzle can't move to a slot already taken on the same DU
+    // (skipping itself). Mirror of the check in addNozzle.
+    const nextSlot = data.slot ?? current.slot
+    const slotTaken = get().nozzles.some(
+      (existing) =>
+        existing.id !== id &&
+        existing.dispenserUnitId === nextDispenserUnitId &&
+        existing.slot === nextSlot,
+    )
+    if (slotTaken) {
+      throw new Error('Slot already used in this dispenser unit')
+    }
+
     set((s) => ({ nozzles: s.nozzles.map((n) => (n.id === id ? { ...n, ...data } : n)) }))
     await supabase.from('nozzles').update({
       name: data.name,
+      dispenser_unit_id: data.dispenserUnitId,
       tank_id: data.tankId,
+      slot: data.slot,
       fuel_type: data.fuelType,
-      current_meter_reading: data.currentMeterReading,
     }).eq('id', id)
   },
 
