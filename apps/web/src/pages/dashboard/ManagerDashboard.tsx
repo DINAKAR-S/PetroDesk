@@ -182,8 +182,14 @@ export default function ManagerDashboard() {
           <table className="w-full text-sm">
             <thead className="bg-surface-container-low border-b border-outline-variant">
               <tr>
-                {['Salesman', 'Shifts', 'Total Litres', 'Total Revenue', 'Avg Cash Variance'].map((h) => (
-                  <th key={h} className="text-left px-5 py-3 text-on-surface-variant font-semibold text-xs uppercase tracking-wider whitespace-nowrap">{h}</th>
+                {[
+                  { label: 'Salesman',          align: 'text-left' },
+                  { label: 'Shifts',            align: 'text-right' },
+                  { label: 'Total Litres',      align: 'text-right' },
+                  { label: 'Total Revenue',     align: 'text-right' },
+                  { label: 'Avg Cash Variance', align: 'text-right' },
+                ].map(({ label, align }) => (
+                  <th key={label} className={cn(align, 'px-5 py-3 text-on-surface-variant font-semibold text-xs uppercase tracking-wider whitespace-nowrap')}>{label}</th>
                 ))}
               </tr>
             </thead>
@@ -198,7 +204,7 @@ export default function ManagerDashboard() {
                   return (
                     <tr key={row.name} className={cn('border-b border-outline-variant last:border-0', i % 2 ? 'bg-surface-container-low/30' : '')}>
                       <td className="px-5 py-3 font-medium text-on-surface">{row.name}</td>
-                      <td className="px-5 py-3 text-on-surface-variant">{row.count}</td>
+                      <td className="px-5 py-3 text-on-surface-variant text-right">{row.count}</td>
                       <td className="px-5 py-3 text-on-surface text-right">{row.litres.toLocaleString('en-IN')} L</td>
                       <td className="px-5 py-3 text-on-surface text-right">₹{row.revenue.toLocaleString('en-IN')}</td>
                       <td className="px-5 py-3 text-right">
@@ -319,8 +325,15 @@ export default function ManagerDashboard() {
               <table className="w-full text-sm">
                 <thead className="bg-surface-container-low border-b border-outline-variant">
                   <tr>
-                    {['Salesman', 'Date', 'Litres', 'Revenue', 'Cash Variance', 'Status'].map((h) => (
-                      <th key={h} className="text-left px-5 py-3 text-on-surface-variant font-semibold text-xs uppercase tracking-wider whitespace-nowrap">{h}</th>
+                    {[
+                      { label: 'Salesman',      align: 'text-left' },
+                      { label: 'Date',          align: 'text-left' },
+                      { label: 'Litres',        align: 'text-right' },
+                      { label: 'Revenue',       align: 'text-right' },
+                      { label: 'Cash Variance', align: 'text-right' },
+                      { label: 'Status',        align: 'text-left' },
+                    ].map(({ label, align }) => (
+                      <th key={label} className={cn(align, 'px-5 py-3 text-on-surface-variant font-semibold text-xs uppercase tracking-wider whitespace-nowrap')}>{label}</th>
                     ))}
                   </tr>
                 </thead>

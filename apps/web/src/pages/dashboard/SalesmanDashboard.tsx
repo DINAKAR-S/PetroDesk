@@ -190,12 +190,21 @@ export default function SalesmanDashboard() {
           <table className="w-full text-sm">
             <thead className="bg-surface-container-low border-b border-outline-variant">
               <tr>
-                {['Date', 'Litres', 'Revenue', 'Cash Variance', 'Status'].map((h) => (
+                {[
+                  { label: 'Date',          align: 'text-left' },
+                  { label: 'Litres',        align: 'text-right' },
+                  { label: 'Revenue',       align: 'text-right' },
+                  { label: 'Cash Variance', align: 'text-right' },
+                  { label: 'Status',        align: 'text-left' },
+                ].map(({ label, align }) => (
                   <th
-                    key={h}
-                    className="text-left px-5 py-3 text-on-surface-variant font-semibold text-xs uppercase tracking-wider whitespace-nowrap"
+                    key={label}
+                    className={cn(
+                      align,
+                      'px-5 py-3 text-on-surface-variant font-semibold text-xs uppercase tracking-wider whitespace-nowrap',
+                    )}
                   >
-                    {h}
+                    {label}
                   </th>
                 ))}
               </tr>

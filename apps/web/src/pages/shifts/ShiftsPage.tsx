@@ -2301,20 +2301,23 @@ export default function ShiftsPage() {
               <thead className="bg-surface-container-low border-b border-outline-variant">
                 <tr>
                   {[
-                    'DU',
-                    'Salesman',
-                    'Time',
-                    'Litres',
-                    'Revenue',
-                    'Cash Variance',
-                    'Status',
-                    'Actions',
-                  ].map((h) => (
+                    { label: 'DU',            align: 'text-left' },
+                    { label: 'Salesman',      align: 'text-left' },
+                    { label: 'Time',          align: 'text-left' },
+                    { label: 'Litres',        align: 'text-right' },
+                    { label: 'Revenue',       align: 'text-right' },
+                    { label: 'Cash Variance', align: 'text-right' },
+                    { label: 'Status',        align: 'text-left' },
+                    { label: 'Actions',       align: 'text-left' },
+                  ].map(({ label, align }) => (
                     <th
-                      key={h}
-                      className="text-left px-5 py-3 text-on-surface-variant font-semibold text-xs uppercase tracking-wider whitespace-nowrap"
+                      key={label}
+                      className={cn(
+                        align,
+                        'px-5 py-3 text-on-surface-variant font-semibold text-xs uppercase tracking-wider whitespace-nowrap',
+                      )}
                     >
-                      {h}
+                      {label}
                     </th>
                   ))}
                 </tr>
