@@ -9,6 +9,7 @@ import type {
   User,
   FuelPrice,
   DispenserUnit,
+  OtherSalesCategory,
   OtherSalesItem,
   ElectronicMethod,
   ExpenseCategory,
@@ -22,6 +23,7 @@ interface AppState {
   dispenserUnits: DispenserUnit[]
   users: User[]
   fuelPrices: FuelPrice[]
+  otherSalesCategories: OtherSalesCategory[]
   otherSalesItems: OtherSalesItem[]
   electronicMethods: ElectronicMethod[]
   expenseCategories: ExpenseCategory[]
@@ -44,6 +46,9 @@ interface AppState {
   deleteUser: (id: string) => Promise<void>
   updateTankStock: (tankId: string, delta: number) => Promise<void>
   updateFuelPrice: (id: string, pricePerLitre: number) => Promise<void>
+  addOtherSalesCategory: (category: Omit<OtherSalesCategory, 'id'>) => Promise<void>
+  updateOtherSalesCategory: (id: string, data: Partial<OtherSalesCategory>) => Promise<void>
+  deleteOtherSalesCategory: (id: string) => Promise<void>
   addOtherSalesItem: (item: Omit<OtherSalesItem, 'id'>) => Promise<void>
   updateOtherSalesItem: (id: string, data: Partial<OtherSalesItem>) => Promise<void>
   deleteOtherSalesItem: (id: string) => Promise<void>
@@ -71,6 +76,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   dispenserUnits: [],
   users: [],
   fuelPrices: [],
+  otherSalesCategories: [],
   otherSalesItems: [],
   electronicMethods: [],
   expenseCategories: [],
@@ -87,6 +93,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         dispenserUnitsRes,
         staffRes,
         pricesRes,
+        otherSalesCategoriesRes,
         otherSalesItemsRes,
         electronicMethodsRes,
         expenseCategoriesRes,
@@ -98,11 +105,22 @@ export const useAppStore = create<AppState>((set, get) => ({
         supabase.from('dispenser_units').select('*').eq('bunk_id', BUNK_ID).order('number'),
         supabase.from('staff').select('*').eq('bunk_id', BUNK_ID).order('created_at'),
         supabase.from('fuel_prices').select('*').eq('bunk_id', BUNK_ID),
+        supabase.from('other_sales_categories').select('*').eq('bunk_id', BUNK_ID).order('created_at'),
         supabase.from('other_sales_items').select('*').eq('bunk_id', BUNK_ID).order('created_at'),
         supabase.from('electronic_methods').select('*').eq('bunk_id', BUNK_ID).order('created_at'),
         supabase.from('expense_categories').select('*').eq('bunk_id', BUNK_ID).order('created_at'),
         supabase.from('customers').select('*').eq('bunk_id', BUNK_ID).order('created_at'),
       ])
+
+      if (otherSalesCategoriesRes.data) {
+        set({
+          otherSalesCategories: otherSalesCategoriesRes.data.map((r: Record<string, unknown>) => ({
+            id: r.id as string,
+            name: r.name as string,
+            active: Boolean(r.active),
+          })),
+        })
+      }
 
       if (bunkRes.data) {
         const b = bunkRes.data
@@ -172,16 +190,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       if (otherSalesItemsRes.data) {
         set({
-          otherSalesItems: otherSalesItemsRes.data.map((r: Record<string, unknown>) => {
-            const qo = r.quantity_options
-            return {
-              id: r.id as string,
-              name: r.name as string,
-              pricePerLitre: Number(r.price_per_litre),
-              quantityOptions: Array.isArray(qo) ? (qo as number[]) : [],
-              active: Boolean(r.active),
-            }
-          }),
+          otherSalesItems: otherSalesItemsRes.data.map((r: Record<string, unknown>) => ({
+            id: r.id as string,
+            categoryId: (r.category_id as string | null) ?? '',
+            name: r.name as string,
+            pricePerLitre: Number(r.price_per_litre),
+            active: Boolean(r.active),
+          })),
         })
       }
 
@@ -480,26 +495,63 @@ export const useAppStore = create<AppState>((set, get) => ({
     await supabase.from('tanks').update({ current_stock_l: newStock }).eq('id', tankId)
   },
 
+  addOtherSalesCategory: async (category) => {
+    const { data, error } = await supabase.from('other_sales_categories').insert({
+      bunk_id: BUNK_ID,
+      name: category.name,
+      active: category.active,
+    }).select().single()
+    if (error) throw new Error(error.message)
+    if (!data) throw new Error('Other sales category insert returned no row')
+    const created: OtherSalesCategory = {
+      id: data.id as string,
+      name: data.name as string,
+      active: Boolean(data.active),
+    }
+    set((s) => ({ otherSalesCategories: [...s.otherSalesCategories, created] }))
+  },
+
+  updateOtherSalesCategory: async (id, data) => {
+    set((s) => ({
+      otherSalesCategories: s.otherSalesCategories.map((c) => (c.id === id ? { ...c, ...data } : c)),
+    }))
+    const payload: Record<string, unknown> = {}
+    if (data.name !== undefined) payload.name = data.name
+    if (data.active !== undefined) payload.active = data.active
+    const { error } = await supabase.from('other_sales_categories').update(payload).eq('id', id)
+    if (error) throw new Error(error.message)
+  },
+
+  deleteOtherSalesCategory: async (id) => {
+    // Soft delete: set active=false. Hides the category and its items from
+    // pickers without breaking historical shift_other_sales references.
+    const previous = get().otherSalesCategories
+    set((s) => ({ otherSalesCategories: s.otherSalesCategories.filter((c) => c.id !== id) }))
+    const { error } = await supabase
+      .from('other_sales_categories')
+      .update({ active: false })
+      .eq('id', id)
+    if (error) {
+      set({ otherSalesCategories: previous })
+      throw new Error(error.message)
+    }
+  },
+
   addOtherSalesItem: async (item) => {
     const { data, error } = await supabase.from('other_sales_items').insert({
       bunk_id: BUNK_ID,
+      category_id: item.categoryId,
       name: item.name,
       price_per_litre: item.pricePerLitre,
-      quantity_options: item.quantityOptions,
       active: item.active,
     }).select().single()
-    if (error) {
-      throw new Error(error.message)
-    }
-    if (!data) {
-      throw new Error('Other sales item insert returned no row')
-    }
-    const qo = (data as Record<string, unknown>).quantity_options
+    if (error) throw new Error(error.message)
+    if (!data) throw new Error('Other sales item insert returned no row')
     const created: OtherSalesItem = {
       id: data.id as string,
+      categoryId: data.category_id as string,
       name: data.name as string,
       pricePerLitre: Number(data.price_per_litre),
-      quantityOptions: Array.isArray(qo) ? (qo as number[]) : [],
       active: Boolean(data.active),
     }
     set((s) => ({ otherSalesItems: [...s.otherSalesItems, created] }))
@@ -511,13 +563,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     }))
     const payload: Record<string, unknown> = {}
     if (data.name !== undefined) payload.name = data.name
+    if (data.categoryId !== undefined) payload.category_id = data.categoryId
     if (data.pricePerLitre !== undefined) payload.price_per_litre = data.pricePerLitre
-    if (data.quantityOptions !== undefined) payload.quantity_options = data.quantityOptions
     if (data.active !== undefined) payload.active = data.active
     const { error } = await supabase.from('other_sales_items').update(payload).eq('id', id)
-    if (error) {
-      throw new Error(error.message)
-    }
+    if (error) throw new Error(error.message)
   },
 
   deleteOtherSalesItem: async (id) => {

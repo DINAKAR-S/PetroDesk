@@ -94,7 +94,11 @@ function rowToOtherSale(r: Record<string, unknown>): ShiftOtherSale {
     shiftId: r.shift_id as string,
     itemId: (r.item_id as string | null) ?? null,
     itemName: r.item_name as string,
+    categoryId: (r.category_id as string | null) ?? null,
+    categoryName: (r.category_name as string | null) ?? '',
     quantity: Number(r.quantity ?? 0),
+    unitPrice: Number(r.unit_price ?? 0),
+    discount: Number(r.discount ?? 0),
     amount: Number(r.amount ?? 0),
   }
 }
@@ -151,7 +155,16 @@ export interface CloseShiftInput {
   shiftId: string
   closings: { nozzleId: string; closingCumVolume: number; closingCumSale: number }[]
   testing: { msVolume: number; msSale: number; hsdVolume: number; hsdSale: number }
-  otherSales: { itemId: string | null; itemName: string; quantity: number; amount: number }[]
+  otherSales: {
+    itemId: string | null
+    itemName: string
+    categoryId: string | null
+    categoryName: string
+    quantity: number
+    unitPrice: number
+    discount: number
+    amount: number
+  }[]
   electronic: { methodId: string | null; methodName: string; amount: number }[]
   credit: { customerId: string | null; customerName: string; amount: number }[]
   expenses: { categoryId: string | null; categoryName: string; amount: number; description: string | null }[]
@@ -560,7 +573,11 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
         shift_id: input.shiftId,
         item_id: x.itemId,
         item_name: x.itemName,
+        category_id: x.categoryId,
+        category_name: x.categoryName,
         quantity: x.quantity,
+        unit_price: x.unitPrice,
+        discount: x.discount,
         amount: x.amount,
       }))
       const { data, error } = await supabase.from('shift_other_sales').insert(payload).select()

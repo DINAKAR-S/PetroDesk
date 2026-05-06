@@ -86,11 +86,19 @@ export interface Shift {
 
 // ─── Phase 2 catalogs (configured in Settings) ──────────────
 
-export interface OtherSalesItem {
+export interface OtherSalesCategory {
   id: string
   name: string
+  active: boolean
+}
+
+export interface OtherSalesItem {
+  id: string
+  categoryId: string
+  name: string
+  // Unit price (kept the column name `price_per_litre` from Phase 2 for
+  // back-compat — it really means per-unit price now).
   pricePerLitre: number
-  quantityOptions: number[]
   active: boolean
 }
 
@@ -120,7 +128,11 @@ export interface ShiftOtherSale {
   shiftId: string
   itemId: string | null
   itemName: string
+  categoryId: string | null
+  categoryName: string
   quantity: number
+  unitPrice: number
+  discount: number
   amount: number
 }
 

@@ -12,6 +12,7 @@ import type {
   FuelType,
   Role,
   DispenserUnit,
+  OtherSalesCategory,
   OtherSalesItem,
   ElectronicMethod,
   ExpenseCategory,
@@ -1305,288 +1306,427 @@ function StaffTab() {
   )
 }
 
-/* ── Other Sales Tab ── */
-type OtherSalesForm = {
-  name: string
-  pricePerLitre: number
-  quantityOptionsText: string
-  active: boolean
-}
+/* ── Other Sales Tab (categories → products, two-level nested) ── */
+type CategoryForm = { name: string; active: boolean }
+type ProductForm = { categoryId: string; name: string; priceText: string; active: boolean }
 
-const EMPTY_OTHER_SALES: OtherSalesForm = {
-  name: '',
-  pricePerLitre: 0,
-  quantityOptionsText: '1, 2, 3, 5',
-  active: true,
-}
+type CategoryModalState = { mode: 'add' } | { mode: 'edit'; category: OtherSalesCategory }
+type ProductModalState =
+  | { mode: 'add'; categoryId: string }
+  | { mode: 'edit'; item: OtherSalesItem }
 
-function parseQuantityOptions(text: string): number[] {
-  return text
-    .split(',')
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0)
-    .map((s) => Number(s))
-    .filter((n) => Number.isFinite(n) && n > 0)
+const EMPTY_CATEGORY: CategoryForm = { name: '', active: true }
+
+function emptyProduct(categoryId: string): ProductForm {
+  return { categoryId, name: '', priceText: '', active: true }
 }
 
 function OtherSalesTab() {
-  const { otherSalesItems, addOtherSalesItem, updateOtherSalesItem, deleteOtherSalesItem } = useAppStore()
-  const [modal, setModal] = useState<{ mode: 'add' | 'edit'; item?: OtherSalesItem } | null>(null)
-  const [form, setForm] = useState<OtherSalesForm>(EMPTY_OTHER_SALES)
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  const {
+    otherSalesCategories,
+    otherSalesItems,
+    addOtherSalesCategory,
+    updateOtherSalesCategory,
+    deleteOtherSalesCategory,
+    addOtherSalesItem,
+    updateOtherSalesItem,
+    deleteOtherSalesItem,
+  } = useAppStore()
 
-  function openAdd() {
-    setForm(EMPTY_OTHER_SALES)
-    setError(null)
-    setModal({ mode: 'add' })
+  const activeCategories = useMemo(
+    () => otherSalesCategories.filter((c) => c.active),
+    [otherSalesCategories],
+  )
+
+  const itemsByCategory = useMemo(() => {
+    const map = new Map<string, OtherSalesItem[]>()
+    for (const item of otherSalesItems) {
+      if (!item.active) continue
+      const list = map.get(item.categoryId)
+      if (list) list.push(item)
+      else map.set(item.categoryId, [item])
+    }
+    return map
+  }, [otherSalesItems])
+
+  const totalActiveProducts = useMemo(
+    () => otherSalesItems.filter((i) => i.active).length,
+    [otherSalesItems],
+  )
+
+  // Default: every category expanded. Re-derives if a new category appears.
+  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set())
+
+  function toggleExpanded(id: string) {
+    setCollapsedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   }
 
-  function openEdit(item: OtherSalesItem) {
-    setForm({
+  // Category modal
+  const [catModal, setCatModal] = useState<CategoryModalState | null>(null)
+  const [catForm, setCatForm] = useState<CategoryForm>(EMPTY_CATEGORY)
+  const [catError, setCatError] = useState<string | null>(null)
+  const [catBusy, setCatBusy] = useState(false)
+
+  function openAddCategory() {
+    setCatForm(EMPTY_CATEGORY)
+    setCatError(null)
+    setCatModal({ mode: 'add' })
+  }
+
+  function openEditCategory(category: OtherSalesCategory) {
+    setCatForm({ name: category.name, active: category.active })
+    setCatError(null)
+    setCatModal({ mode: 'edit', category })
+  }
+
+  async function handleSaveCategory() {
+    setCatError(null)
+    const name = catForm.name.trim()
+    if (!name) {
+      setCatError('Name is required')
+      return
+    }
+    setCatBusy(true)
+    try {
+      if (catModal?.mode === 'add') {
+        await addOtherSalesCategory({ name, active: catForm.active })
+      } else if (catModal?.mode === 'edit') {
+        await updateOtherSalesCategory(catModal.category.id, { name, active: catForm.active })
+      }
+      setCatModal(null)
+    } catch (err: unknown) {
+      setCatError(err instanceof Error ? err.message : 'Failed to save category')
+    } finally {
+      setCatBusy(false)
+    }
+  }
+
+  async function handleDeleteCategory(category: OtherSalesCategory) {
+    const ok = confirm(
+      `Delete category ${category.name}? It will be hidden from new shift entries. Existing shift history is preserved.`,
+    )
+    if (!ok) return
+    try {
+      await deleteOtherSalesCategory(category.id)
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to delete category')
+    }
+  }
+
+  // Product modal
+  const [prodModal, setProdModal] = useState<ProductModalState | null>(null)
+  const [prodForm, setProdForm] = useState<ProductForm>(emptyProduct(''))
+  const [prodError, setProdError] = useState<string | null>(null)
+  const [prodBusy, setProdBusy] = useState(false)
+
+  function openAddProduct(categoryId: string) {
+    setProdForm(emptyProduct(categoryId))
+    setProdError(null)
+    setProdModal({ mode: 'add', categoryId })
+  }
+
+  function openEditProduct(item: OtherSalesItem) {
+    setProdForm({
+      categoryId: item.categoryId,
       name: item.name,
-      pricePerLitre: item.pricePerLitre,
-      quantityOptionsText: item.quantityOptions.join(', '),
+      priceText: String(item.pricePerLitre),
       active: item.active,
     })
-    setError(null)
-    setModal({ mode: 'edit', item })
+    setProdError(null)
+    setProdModal({ mode: 'edit', item })
   }
 
-  async function handleSave() {
-    setError(null)
-    const name = form.name.trim()
+  async function handleSaveProduct() {
+    setProdError(null)
+    const name = prodForm.name.trim()
     if (!name) {
-      setError('Name is required')
+      setProdError('Name is required')
       return
     }
-    if (!(form.pricePerLitre > 0)) {
-      setError('Price per litre must be greater than 0')
+    if (!prodForm.categoryId) {
+      setProdError('Category is required')
       return
     }
-    const quantityOptions = parseQuantityOptions(form.quantityOptionsText)
-    if (quantityOptions.length === 0) {
-      setError('Add at least one quantity option (e.g. "1, 2, 3, 5")')
+    const price = parseNonNeg(prodForm.priceText)
+    if (price === null) {
+      setProdError('Price must be a number ≥ 0')
       return
     }
-    setBusy(true)
+    setProdBusy(true)
     try {
-      if (modal?.mode === 'add') {
+      if (prodModal?.mode === 'add') {
         await addOtherSalesItem({
+          categoryId: prodForm.categoryId,
           name,
-          pricePerLitre: form.pricePerLitre,
-          quantityOptions,
-          active: form.active,
+          pricePerLitre: price,
+          active: prodForm.active,
         })
-      } else if (modal?.item) {
-        await updateOtherSalesItem(modal.item.id, {
+      } else if (prodModal?.mode === 'edit') {
+        await updateOtherSalesItem(prodModal.item.id, {
+          categoryId: prodForm.categoryId,
           name,
-          pricePerLitre: form.pricePerLitre,
-          quantityOptions,
-          active: form.active,
+          pricePerLitre: price,
+          active: prodForm.active,
         })
       }
-      setModal(null)
+      setProdModal(null)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to save item')
+      setProdError(err instanceof Error ? err.message : 'Failed to save product')
     } finally {
-      setBusy(false)
+      setProdBusy(false)
     }
   }
 
-  async function handleDelete(item: OtherSalesItem) {
-    if (!confirm(`Delete ${item.name}?`)) return
+  async function handleDeleteProduct(item: OtherSalesItem) {
+    const ok = confirm(
+      `Delete product ${item.name}? It will be hidden from new shift entries. Existing shift history is preserved.`,
+    )
+    if (!ok) return
     try {
       await deleteOtherSalesItem(item.id)
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to delete item')
+      alert(err instanceof Error ? err.message : 'Failed to delete product')
     }
   }
 
-  async function toggleActive(item: OtherSalesItem) {
-    try {
-      await updateOtherSalesItem(item.id, { active: !item.active })
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to update item')
-    }
-  }
+  const catCount = activeCategories.length
+  const headerText = `${catCount} categor${catCount === 1 ? 'y' : 'ies'}, ${totalActiveProducts} product${totalActiveProducts === 1 ? '' : 's'} configured`
 
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 mb-4">
-        <p className="text-on-surface-variant text-sm max-w-xl">
-          Catalog of non-fuel items sold (e.g. Distilled Water, Oil, AdBlue). Configure name, price per litre, and quantity options.
-        </p>
+        <p className="text-on-surface-variant text-sm max-w-xl">{headerText}</p>
         <button
-          onClick={openAdd}
+          onClick={openAddCategory}
           className="flex items-center justify-center gap-2 px-4 py-2.5 bg-secondary-container text-white rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity w-full sm:w-auto flex-shrink-0"
         >
           <span className="material-symbols-outlined text-[16px]">add</span>
-          Add Item
+          Add Category
         </button>
       </div>
 
-      {otherSalesItems.length === 0 ? (
+      {activeCategories.length === 0 ? (
         <div className="bg-surface-container-lowest rounded-xl border border-dashed border-outline-variant p-6 text-center">
-          <p className="text-on-surface-variant text-sm">No items yet. Add your first one.</p>
+          <p className="text-on-surface-variant text-sm">
+            No categories yet. Add one (e.g. &lsquo;Lube Sales&rsquo;) to start adding products.
+          </p>
         </div>
       ) : (
-        <>
-          {/* Mobile cards */}
-          <div className="flex flex-col gap-3 sm:hidden">
-            {otherSalesItems.map((item) => (
+        <div className="flex flex-col gap-3">
+          {activeCategories.map((category) => {
+            const products = itemsByCategory.get(category.id) ?? []
+            const expanded = !collapsedIds.has(category.id)
+            return (
               <div
-                key={item.id}
-                className="bg-surface-container-lowest rounded-xl border border-outline-variant p-4 flex flex-col gap-3"
+                key={category.id}
+                className="bg-surface-container-lowest border border-outline-variant rounded-xl p-4"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-on-surface font-semibold text-sm truncate">{item.name}</p>
-                    <p className="text-on-surface-variant text-xs mt-0.5">
-                      ₹{item.pricePerLitre.toFixed(2)} / L
-                    </p>
-                    <p className="text-on-surface-variant text-xs mt-0.5">
-                      Qty: {item.quantityOptions.join(' / ')}
-                    </p>
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleExpanded(category.id)}
+                    className="flex items-center gap-2 min-w-0 flex-1 text-left"
+                  >
+                    <span className="material-symbols-outlined text-[20px] text-on-surface-variant flex-shrink-0">
+                      {expanded ? 'expand_more' : 'chevron_right'}
+                    </span>
+                    <span className="text-on-surface font-semibold text-sm truncate">
+                      {category.name}
+                    </span>
+                    <span className="text-on-surface-variant text-xs flex-shrink-0">
+                      ({products.length})
+                    </span>
+                  </button>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button
+                      onClick={() => openEditCategory(category)}
+                      className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors"
+                      aria-label={`Edit ${category.name}`}
+                    >
+                      <span className="material-symbols-outlined text-[18px]">edit</span>
+                    </button>
+                    <button
+                      onClick={() => handleDeleteCategory(category)}
+                      className="p-2 rounded-lg text-on-surface-variant hover:bg-red-50 hover:text-red-600 transition-colors"
+                      aria-label={`Delete ${category.name}`}
+                    >
+                      <span className="material-symbols-outlined text-[18px]">delete</span>
+                    </button>
                   </div>
-                  <label className="flex items-center gap-1.5 text-xs text-on-surface-variant cursor-pointer flex-shrink-0">
-                    <input
-                      type="checkbox"
-                      checked={item.active}
-                      onChange={() => toggleActive(item)}
-                      className="size-4 rounded border-outline-variant accent-primary"
-                    />
-                    Active
-                  </label>
                 </div>
-                <div className="flex items-center gap-2 border-t border-outline-variant pt-2">
-                  <button
-                    onClick={() => openEdit(item)}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-semibold text-on-surface border border-outline-variant rounded-lg hover:bg-surface-container"
-                  >
-                    <span className="material-symbols-outlined text-[14px]">edit</span>
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleDelete(item)}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-semibold text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
-                  >
-                    <span className="material-symbols-outlined text-[14px]">delete</span>
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
 
-          {/* Desktop table */}
-          <div className="hidden sm:block bg-surface-container-lowest rounded-xl border border-outline-variant overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-surface-container">
-                <tr className="text-left text-on-surface-variant text-xs uppercase tracking-wide">
-                  <th className="py-2.5 px-4 font-semibold">Name</th>
-                  <th className="py-2.5 px-4 font-semibold">Price / L</th>
-                  <th className="py-2.5 px-4 font-semibold">Quantity Options</th>
-                  <th className="py-2.5 px-4 font-semibold">Active</th>
-                  <th className="py-2.5 px-4 font-semibold text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {otherSalesItems.map((item) => (
-                  <tr key={item.id} className="border-t border-outline-variant">
-                    <td className="py-2.5 px-4 text-on-surface font-medium">{item.name}</td>
-                    <td className="py-2.5 px-4 text-on-surface">₹{item.pricePerLitre.toFixed(2)}</td>
-                    <td className="py-2.5 px-4 text-on-surface-variant">
-                      {item.quantityOptions.join(' / ')}
-                    </td>
-                    <td className="py-2.5 px-4">
-                      <input
-                        type="checkbox"
-                        checked={item.active}
-                        onChange={() => toggleActive(item)}
-                        className="size-4 rounded border-outline-variant accent-primary cursor-pointer"
-                      />
-                    </td>
-                    <td className="py-2.5 px-4">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => openEdit(item)}
-                          className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors"
+                {expanded && (
+                  <div className="mt-3 border-t border-outline-variant pt-3 flex flex-col gap-2">
+                    {products.length === 0 ? (
+                      <p className="text-on-surface-variant text-xs italic px-1">
+                        No products yet in this category.
+                      </p>
+                    ) : (
+                      products.map((item) => (
+                        <div
+                          key={item.id}
+                          className="flex items-center justify-between gap-2 bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2"
                         >
-                          <span className="material-symbols-outlined text-[18px]">edit</span>
-                        </button>
-                        <button
-                          onClick={() => handleDelete(item)}
-                          className="p-2 rounded-lg text-on-surface-variant hover:bg-red-50 hover:text-red-600 transition-colors"
-                        >
-                          <span className="material-symbols-outlined text-[18px]">delete</span>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
+                          <p className="text-on-surface text-sm font-medium truncate min-w-0 flex-1">
+                            {item.name}
+                          </p>
+                          <p className="text-on-surface text-sm font-semibold flex-shrink-0">
+                            ₹{item.pricePerLitre.toFixed(2)}
+                          </p>
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <button
+                              onClick={() => openEditProduct(item)}
+                              className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors"
+                              aria-label={`Edit ${item.name}`}
+                            >
+                              <span className="material-symbols-outlined text-[16px]">edit</span>
+                            </button>
+                            <button
+                              onClick={() => handleDeleteProduct(item)}
+                              className="p-1.5 rounded-lg text-on-surface-variant hover:bg-red-50 hover:text-red-600 transition-colors"
+                              aria-label={`Delete ${item.name}`}
+                            >
+                              <span className="material-symbols-outlined text-[16px]">delete</span>
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                    <button
+                      onClick={() => openAddProduct(category.id)}
+                      className="self-start sm:self-end flex items-center justify-center gap-1.5 px-3 py-1.5 mt-1 text-xs font-semibold text-on-surface border border-dashed border-outline-variant rounded-lg hover:bg-surface-container"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">add</span>
+                      Add Product
+                    </button>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
       )}
 
-      {modal && (
+      {catModal && (
         <Modal
-          title={modal.mode === 'add' ? 'Add Other Sales Item' : 'Edit Other Sales Item'}
-          onClose={() => setModal(null)}
+          title={catModal.mode === 'add' ? 'Add Category' : `Edit ${catModal.category.name}`}
+          onClose={() => setCatModal(null)}
         >
           <div className="flex flex-col gap-4">
             <Field label="Name">
               <input
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="e.g. Distilled Water"
+                value={catForm.name}
+                onChange={(e) => setCatForm({ ...catForm, name: e.target.value })}
+                placeholder="e.g. Lube Sales"
+                className={INPUT_CLS}
+                autoFocus
+              />
+            </Field>
+            <label className="flex items-center gap-2 text-sm text-on-surface cursor-pointer">
+              <input
+                type="checkbox"
+                checked={catForm.active}
+                onChange={(e) => setCatForm({ ...catForm, active: e.target.checked })}
+                className="size-4 rounded border-outline-variant accent-primary"
+              />
+              Active
+            </label>
+            {catError && <p className="text-red-600 text-xs font-medium">{catError}</p>}
+            <div className="flex flex-col-reverse sm:flex-row gap-3 pt-1">
+              <button
+                onClick={() => setCatModal(null)}
+                disabled={catBusy}
+                className="flex-1 py-2.5 border border-outline-variant rounded-lg text-sm font-semibold text-on-surface-variant hover:bg-surface-container disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveCategory}
+                disabled={catBusy}
+                className="flex-1 py-2.5 bg-secondary-container text-white rounded-lg text-sm font-semibold hover:opacity-90 disabled:opacity-60"
+              >
+                {catBusy ? 'Saving…' : catModal.mode === 'add' ? 'Add Category' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {prodModal && (
+        <Modal
+          title={
+            prodModal.mode === 'add'
+              ? `Add Product to ${otherSalesCategories.find((c) => c.id === prodModal.categoryId)?.name ?? ''}`
+              : `Edit ${prodModal.item.name}`
+          }
+          onClose={() => setProdModal(null)}
+        >
+          <div className="flex flex-col gap-4">
+            <Field label="Category">
+              <select
+                value={prodForm.categoryId}
+                onChange={(e) => setProdForm({ ...prodForm, categoryId: e.target.value })}
+                className={INPUT_CLS}
+              >
+                <option value="" disabled>
+                  Select category…
+                </option>
+                {activeCategories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Name">
+              <input
+                value={prodForm.name}
+                onChange={(e) => setProdForm({ ...prodForm, name: e.target.value })}
+                placeholder="e.g. 5 ml or 1 Ltr (2T)"
                 className={INPUT_CLS}
               />
             </Field>
-            <Field label="Price per Litre (₹)">
+            <Field label="Price (₹)">
               <input
                 type="number"
                 min="0"
                 step="0.01"
-                value={form.pricePerLitre}
-                onChange={(e) => setForm({ ...form, pricePerLitre: Number(e.target.value) })}
-                className={INPUT_CLS}
-              />
-            </Field>
-            <Field label="Quantity Options (comma-separated)">
-              <input
-                value={form.quantityOptionsText}
-                onChange={(e) => setForm({ ...form, quantityOptionsText: e.target.value })}
-                placeholder="1, 2, 3, 5"
+                inputMode="decimal"
+                value={prodForm.priceText}
+                onChange={(e) => setProdForm({ ...prodForm, priceText: e.target.value })}
+                placeholder="0.00"
                 className={INPUT_CLS}
               />
             </Field>
             <label className="flex items-center gap-2 text-sm text-on-surface cursor-pointer">
               <input
                 type="checkbox"
-                checked={form.active}
-                onChange={(e) => setForm({ ...form, active: e.target.checked })}
+                checked={prodForm.active}
+                onChange={(e) => setProdForm({ ...prodForm, active: e.target.checked })}
                 className="size-4 rounded border-outline-variant accent-primary"
               />
               Active
             </label>
-            {error && <p className="text-red-600 text-xs font-medium">{error}</p>}
+            {prodError && <p className="text-red-600 text-xs font-medium">{prodError}</p>}
             <div className="flex flex-col-reverse sm:flex-row gap-3 pt-1">
               <button
-                onClick={() => setModal(null)}
-                disabled={busy}
+                onClick={() => setProdModal(null)}
+                disabled={prodBusy}
                 className="flex-1 py-2.5 border border-outline-variant rounded-lg text-sm font-semibold text-on-surface-variant hover:bg-surface-container disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
-                onClick={handleSave}
-                disabled={busy}
+                onClick={handleSaveProduct}
+                disabled={prodBusy}
                 className="flex-1 py-2.5 bg-secondary-container text-white rounded-lg text-sm font-semibold hover:opacity-90 disabled:opacity-60"
               >
-                {busy ? 'Saving…' : modal.mode === 'add' ? 'Add Item' : 'Save Changes'}
+                {prodBusy ? 'Saving…' : prodModal.mode === 'add' ? 'Add Product' : 'Save Changes'}
               </button>
             </div>
           </div>

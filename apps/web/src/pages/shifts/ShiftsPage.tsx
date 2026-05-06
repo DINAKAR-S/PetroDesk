@@ -11,6 +11,7 @@ import type {
   DispenserUnit,
   FuelType,
   NozzleSlot,
+  OtherSalesCategory,
   OtherSalesItem,
   ElectronicMethod,
   ExpenseCategory,
@@ -517,7 +518,11 @@ interface ClosingRowState {
 interface OtherSalesRowState {
   itemId: string | null
   itemName: string
+  categoryId: string | null
+  categoryName: string
   quantity: number
+  unitPrice: number
+  discount: number
   amount: number
 }
 
@@ -678,58 +683,150 @@ function CustomerSearch({ customers, onPick }: CustomerSearchProps) {
 
 // ─── Per-catalog inline-add row subcomponents ─────────────────
 
-interface OtherSalesCatalogRowProps {
-  item: OtherSalesItem
+interface OtherSalesAddRowProps {
+  categories: OtherSalesCategory[]
+  items: OtherSalesItem[]
   onAdd: (entry: OtherSalesRowState) => void
 }
 
-function OtherSalesCatalogRow({ item, onAdd }: OtherSalesCatalogRowProps) {
-  const options = item.quantityOptions.length > 0 ? item.quantityOptions : [1]
-  const [qty, setQty] = useState<number>(options[0])
-  const amount = qty * item.pricePerLitre
+function OtherSalesAddRow({ categories, items, onAdd }: OtherSalesAddRowProps) {
+  const [categoryId, setCategoryId] = useState<string>('')
+  const [itemId, setItemId] = useState<string>('')
+  const [quantity, setQuantity] = useState<string>('')
+  const [discount, setDiscount] = useState<string>('0')
+
+  const productsForCategory = useMemo(() => {
+    if (categoryId === '') return []
+    return items
+      .filter((i) => i.categoryId === categoryId)
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [items, categoryId])
+
+  const selectedCategory = categories.find((c) => c.id === categoryId) ?? null
+  const selectedItem = productsForCategory.find((i) => i.id === itemId) ?? null
+
+  const qtyNum = quantity === '' ? 0 : Number(quantity)
+  const discountNum = discount === '' ? 0 : Number(discount)
+  const qtyValid = !Number.isNaN(qtyNum) && qtyNum >= 1
+  const discountValid = !Number.isNaN(discountNum) && discountNum >= 0
+  const unitPrice = selectedItem ? selectedItem.pricePerLitre : 0
+  const finalAmount = Math.max(
+    0,
+    (qtyValid ? qtyNum : 0) * unitPrice - (discountValid ? discountNum : 0),
+  )
+
+  const canAdd =
+    selectedCategory !== null &&
+    selectedItem !== null &&
+    qtyValid &&
+    discountValid &&
+    finalAmount >= 0
+
+  function handleAdd(): void {
+    if (!canAdd || !selectedCategory || !selectedItem) return
+    onAdd({
+      itemId: selectedItem.id,
+      itemName: selectedItem.name,
+      categoryId: selectedCategory.id,
+      categoryName: selectedCategory.name,
+      quantity: qtyNum,
+      unitPrice: selectedItem.pricePerLitre,
+      discount: discountNum,
+      amount: finalAmount,
+    })
+    // Per spec: clear Quantity + Discount, keep Category + Product so the
+    // salesman can quickly add another quantity from the same product.
+    setQuantity('')
+    setDiscount('0')
+  }
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto_auto] gap-2 items-end px-3 py-2 rounded-xl border border-outline-variant bg-surface-container-lowest">
-      <div className="flex flex-col gap-0.5">
-        <span className="text-on-surface text-sm font-medium">{item.name}</span>
-        <span className="text-on-surface-variant text-xs">
-          ₹{item.pricePerLitre.toLocaleString('en-IN')}/L
-        </span>
-      </div>
-      <div className="flex flex-col gap-1">
-        <label className="text-on-surface-variant text-xs">Quantity</label>
-        <select
-          value={qty}
-          onChange={(e) => setQty(Number(e.target.value))}
-          className="px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-sm"
-        >
-          {options.map((o) => (
-            <option key={o} value={o}>
-              {o} L
+    <div className="flex flex-col gap-2 px-3 py-3 rounded-xl border border-outline-variant bg-surface-container-lowest">
+      <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_6rem_6rem_auto] gap-2 items-end">
+        <div className="flex flex-col gap-1">
+          <label className="text-on-surface-variant text-xs">Category</label>
+          <select
+            value={categoryId}
+            onChange={(e) => {
+              setCategoryId(e.target.value)
+              setItemId('')
+            }}
+            className="px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+          >
+            <option value="">Select category…</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-on-surface-variant text-xs">Product</label>
+          <select
+            value={itemId}
+            onChange={(e) => setItemId(e.target.value)}
+            disabled={categoryId === ''}
+            className="px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-60"
+          >
+            <option value="">
+              {categoryId === ''
+                ? 'Pick a category first'
+                : productsForCategory.length === 0
+                ? 'No active products'
+                : 'Select product…'}
             </option>
-          ))}
-        </select>
+            {productsForCategory.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} (₹{p.pricePerLitre.toLocaleString('en-IN')})
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-on-surface-variant text-xs">Quantity</label>
+          <input
+            type="number"
+            min="1"
+            step="1"
+            inputMode="decimal"
+            value={quantity}
+            onChange={(e) => setQuantity(e.target.value)}
+            placeholder="Qty"
+            className="px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-on-surface-variant text-xs">Discount (₹)</label>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            inputMode="decimal"
+            value={discount}
+            onChange={(e) => setDiscount(e.target.value)}
+            placeholder="0"
+            className="px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={handleAdd}
+          disabled={!canAdd}
+          className="px-3 py-2 rounded-lg text-xs font-medium bg-primary text-on-primary hover:opacity-90 disabled:opacity-60"
+        >
+          + Add
+        </button>
       </div>
-      <div className="flex flex-col gap-0.5 min-w-[5rem]">
-        <span className="text-on-surface-variant text-xs">Amount</span>
-        <span className="text-on-surface font-medium text-sm">
-          ₹{amount.toLocaleString('en-IN')}
+      <div className="text-on-surface-variant text-xs break-words">
+        {qtyValid ? qtyNum.toLocaleString('en-IN') : 0} × ₹
+        {unitPrice.toLocaleString('en-IN')} − ₹
+        {(discountValid ? discountNum : 0).toLocaleString('en-IN')} ={' '}
+        <span className="text-on-surface font-medium">
+          ₹{finalAmount.toLocaleString('en-IN')}
         </span>
       </div>
-      <button
-        type="button"
-        onClick={() =>
-          onAdd({
-            itemId: item.id,
-            itemName: item.name,
-            quantity: qty,
-            amount,
-          })
-        }
-        className="px-3 py-2 rounded-lg text-xs font-medium bg-primary text-on-primary hover:opacity-90"
-      >
-        + Add
-      </button>
     </div>
   )
 }
@@ -866,11 +963,16 @@ export function CloseShiftModal({ shift, onClose }: CloseShiftModalProps) {
   const submitLabel = isEdit ? 'Save Changes' : 'Close Shift'
 
   // Phase 2 catalogs
+  const otherSalesCategories = useAppStore((s) => s.otherSalesCategories)
   const otherSalesItems = useAppStore((s) => s.otherSalesItems)
   const electronicMethods = useAppStore((s) => s.electronicMethods)
   const expenseCategoriesCatalog = useAppStore((s) => s.expenseCategories)
   const customers = useAppStore((s) => s.customers)
 
+  const activeOtherSalesCategories = useMemo(
+    () => otherSalesCategories.filter((c) => c.active),
+    [otherSalesCategories],
+  )
   const activeOtherSalesItems = useMemo(
     () => otherSalesItems.filter((i) => i.active),
     [otherSalesItems],
@@ -950,7 +1052,11 @@ export function CloseShiftModal({ shift, onClose }: CloseShiftModalProps) {
         persistedOtherSales.map((o) => ({
           itemId: o.itemId,
           itemName: o.itemName,
+          categoryId: o.categoryId,
+          categoryName: o.categoryName,
           quantity: o.quantity,
+          unitPrice: o.unitPrice,
+          discount: o.discount,
           amount: o.amount,
         })),
       )
@@ -1139,7 +1245,11 @@ export function CloseShiftModal({ shift, onClose }: CloseShiftModalProps) {
         otherSales: otherSalesEntries.map((e) => ({
           itemId: e.itemId,
           itemName: e.itemName,
+          categoryId: e.categoryId,
+          categoryName: e.categoryName,
           quantity: e.quantity,
+          unitPrice: e.unitPrice,
+          discount: e.discount,
           amount: e.amount,
         })),
         electronic: electronicEntries.map((e) => ({
@@ -1435,20 +1545,16 @@ export function CloseShiftModal({ shift, onClose }: CloseShiftModalProps) {
               <h3 className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider">
                 D. Other Sales
               </h3>
-              {activeOtherSalesItems.length === 0 ? (
+              {activeOtherSalesCategories.length === 0 ? (
                 <div className="px-3 py-2 rounded-xl border border-outline-variant bg-surface-container/60 text-sm text-on-surface-variant">
-                  Configure Other Sales items in Settings to use this section.
+                  Configure categories in Settings → Other Sales to use this section.
                 </div>
               ) : (
-                <div className="flex flex-col gap-2">
-                  {activeOtherSalesItems.map((item) => (
-                    <OtherSalesCatalogRow
-                      key={item.id}
-                      item={item}
-                      onAdd={handleAddOtherSale}
-                    />
-                  ))}
-                </div>
+                <OtherSalesAddRow
+                  categories={activeOtherSalesCategories}
+                  items={activeOtherSalesItems}
+                  onAdd={handleAddOtherSale}
+                />
               )}
               {otherSalesEntries.length > 0 && (
                 <div className="flex flex-col gap-1">
@@ -1457,8 +1563,11 @@ export function CloseShiftModal({ shift, onClose }: CloseShiftModalProps) {
                       key={i}
                       className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-surface-container text-sm"
                     >
-                      <span className="text-on-surface">
-                        {e.itemName} · {e.quantity}L · ₹{e.amount.toLocaleString('en-IN')}
+                      <span className="text-on-surface break-words">
+                        {e.categoryName} · {e.itemName} · {e.quantity} × ₹
+                        {e.unitPrice.toLocaleString('en-IN')} − ₹
+                        {e.discount.toLocaleString('en-IN')} = ₹
+                        {e.amount.toLocaleString('en-IN')}
                       </span>
                       <button
                         type="button"
@@ -1473,7 +1582,7 @@ export function CloseShiftModal({ shift, onClose }: CloseShiftModalProps) {
                 </div>
               )}
               <div className="px-3 py-2 rounded-xl bg-surface-container text-sm text-on-surface-variant">
-                Sub-total:{' '}
+                Other Sales total:{' '}
                 <span className="text-on-surface font-medium">
                   ₹{totalOtherSales.toLocaleString('en-IN')}
                 </span>
