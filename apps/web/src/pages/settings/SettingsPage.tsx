@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAppStore } from '@/store/appStore'
 import { useAuthStore } from '@/store/authStore'
+import { useShiftsStore } from '@/store/shiftsStore'
 import { cn } from '@/lib/utils'
 import type {
   Tank,
@@ -73,13 +74,36 @@ const INPUT_CLS =
 /* ── Bunk Profile Tab ── */
 function BunkProfileTab() {
   const { bunk, updateBunk } = useAppStore()
+  const role = useAuthStore((s) => s.currentUser?.role)
+  const resetAllShifts = useShiftsStore((s) => s.resetAllShifts)
+  const shiftCount = useShiftsStore((s) => s.shifts.length)
   const [form, setForm] = useState({ ...bunk })
   const [saved, setSaved] = useState(false)
+  const [resetting, setResetting] = useState(false)
+  const [resetError, setResetError] = useState<string | null>(null)
 
   function handleSave() {
     updateBunk(form)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
+  }
+
+  async function handleReset() {
+    setResetError(null)
+    const phrase = 'RESET'
+    const typed = prompt(
+      `This will permanently delete all ${shiftCount} shift(s), nozzle readings, and customer credit entries linked to shifts. Tank stocks will be restored.\n\nType ${phrase} to confirm.`,
+    )
+    if (typed?.trim() !== phrase) return
+    setResetting(true)
+    try {
+      await resetAllShifts()
+      alert('All shift data wiped. Tank stocks restored. Catalogs / customers / staff / DUs / nozzles preserved.')
+    } catch (err: unknown) {
+      setResetError(err instanceof Error ? err.message : 'Reset failed')
+    } finally {
+      setResetting(false)
+    }
   }
 
   return (
@@ -122,6 +146,28 @@ function BunkProfileTab() {
         </button>
         {saved && <span className="text-emerald-600 text-sm font-medium">✓ Saved</span>}
       </div>
+
+      {role === 'owner' && (
+        <div className="mt-8 border border-rose-200 bg-rose-50 rounded-xl p-4">
+          <h3 className="text-rose-700 text-sm font-semibold mb-1">Danger Zone</h3>
+          <p className="text-rose-700/80 text-xs mb-3">
+            Wipe every shift, nozzle reading, and shift-linked credit-ledger entry.
+            Tank stocks are restored to their pre-shift values. Catalogs, customers,
+            staff, DUs, and nozzles (including their initial values) are preserved.
+            Use this when you want to reset all calculations and start fresh.
+          </p>
+          <button
+            onClick={handleReset}
+            disabled={resetting || shiftCount === 0}
+            className="px-4 py-2 bg-rose-600 text-white rounded-lg text-sm font-semibold hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {resetting ? 'Resetting…' : `Reset all shift data (${shiftCount})`}
+          </button>
+          {resetError && (
+            <p className="text-rose-700 text-xs font-medium mt-2">{resetError}</p>
+          )}
+        </div>
+      )}
     </div>
   )
 }

@@ -2154,7 +2154,7 @@ export default function ShiftsPage() {
                           Flag
                         </button>
                       )}
-                      {isOwnerOrManager && shift.status !== 'open' && (
+                      {isOwnerOrManager && (
                         <button
                           onClick={() => handleDelete(shift)}
                           className="ml-auto p-1.5 rounded-lg text-on-surface-variant hover:text-rose-600 hover:bg-rose-50 transition-colors"
@@ -2303,7 +2303,7 @@ export default function ShiftsPage() {
                                   Flag
                                 </button>
                               )}
-                              {isOwnerOrManager && shift.status !== 'open' && (
+                              {isOwnerOrManager && (
                                 <button
                                   onClick={() => handleDelete(shift)}
                                   className="p-1 rounded-lg text-on-surface-variant hover:text-rose-600 hover:bg-rose-50 transition-colors"

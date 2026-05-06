@@ -194,6 +194,7 @@ interface ShiftsState {
   getOpeningReadingsForDU: (dispenserUnitId: string) => Promise<OpeningReading[]>
   flagShift: (shiftId: string) => Promise<void>
   deleteShift: (id: string) => Promise<void>
+  resetAllShifts: () => Promise<void>
   addDelivery: (d: Omit<TankerDelivery, 'id'>) => Promise<void>
   updateDelivery: (id: string, d: Omit<TankerDelivery, 'id'>) => Promise<void>
   deleteDelivery: (id: string) => Promise<void>
@@ -884,11 +885,112 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
   },
 
   deleteShift: async (id) => {
+    // For a closed/flagged shift, the tank stock was already decremented.
+    // Deleting the shift means "this shift didn't happen" — so we restore
+    // the stock and wipe the customer_ledger entries that were tied to it.
+    // For an open shift no tank decrement happened yet, just remove rows.
+    const shift = get().shifts.find((s) => s.id === id)
+
+    if (shift && shift.status !== 'open') {
+      // 1. Look up nozzle → tank mapping for this shift's readings.
+      const { data: readingRows } = await supabase
+        .from('nozzle_readings')
+        .select('nozzle_id, litres_sold')
+        .eq('shift_id', id)
+      if (readingRows && readingRows.length > 0) {
+        const nozzleIds = (readingRows as Record<string, unknown>[]).map((r) => r.nozzle_id as string)
+        const { data: nozzleRows } = await supabase
+          .from('nozzles')
+          .select('id, tank_id')
+          .in('id', nozzleIds)
+        const nozzleToTank = new Map<string, string>()
+        for (const n of (nozzleRows as Record<string, unknown>[]) ?? []) {
+          nozzleToTank.set(n.id as string, n.tank_id as string)
+        }
+        // 2. Sum litres per tank, restore stock by adding it back.
+        const tankRestore = new Map<string, number>()
+        for (const r of readingRows as Record<string, unknown>[]) {
+          const tankId = nozzleToTank.get(r.nozzle_id as string)
+          const litres = Number(r.litres_sold ?? 0)
+          if (!tankId || litres === 0) continue
+          tankRestore.set(tankId, (tankRestore.get(tankId) ?? 0) + litres)
+        }
+        const updateTankStock = useAppStore.getState().updateTankStock
+        for (const [tankId, litres] of tankRestore) {
+          await updateTankStock(tankId, +litres)
+        }
+      }
+      // 3. Wipe customer_ledger entries for this shift (FK is ON DELETE SET NULL,
+      // which would leave orphan ledger rows that wrongly inflate balances).
+      await supabase.from('customer_ledger').delete().eq('shift_id', id)
+    }
+
+    // 4. Optimistic local-state cleanup.
     set((s) => ({
       shifts: s.shifts.filter((sh) => sh.id !== id),
       nozzleReadings: s.nozzleReadings.filter((r) => r.shiftId !== id),
+      otherSales: s.otherSales.filter((x) => x.shiftId !== id),
+      electronicEntries: s.electronicEntries.filter((x) => x.shiftId !== id),
+      expenseEntries: s.expenseEntries.filter((x) => x.shiftId !== id),
+      creditEntries: s.creditEntries.filter((x) => x.shiftId !== id),
     }))
-    await supabase.from('shifts').delete().eq('id', id)
+
+    // 5. DB delete — schema has ON DELETE CASCADE for the 4 child tables and
+    // for nozzle_readings, so they're cleaned up server-side automatically.
+    const { error } = await supabase.from('shifts').delete().eq('id', id)
+    if (error) throw new Error(error.message)
+  },
+
+  resetAllShifts: async () => {
+    // Owner-only "Danger Zone" wipe. Removes every shift + its child rows
+    // + customer_ledger entries that reference any shift. Tank stocks are
+    // restored by summing litres_sold across all closed/flagged shifts.
+    // Catalogs / customers / staff / tanks / DUs / nozzles stay intact.
+    const { data: readingRows } = await supabase
+      .from('nozzle_readings')
+      .select('nozzle_id, litres_sold')
+    if (readingRows && readingRows.length > 0) {
+      const nozzleIds = Array.from(
+        new Set((readingRows as Record<string, unknown>[]).map((r) => r.nozzle_id as string)),
+      )
+      const { data: nozzleRows } = await supabase
+        .from('nozzles')
+        .select('id, tank_id')
+        .in('id', nozzleIds)
+      const nozzleToTank = new Map<string, string>()
+      for (const n of (nozzleRows as Record<string, unknown>[]) ?? []) {
+        nozzleToTank.set(n.id as string, n.tank_id as string)
+      }
+      const tankRestore = new Map<string, number>()
+      for (const r of readingRows as Record<string, unknown>[]) {
+        const tankId = nozzleToTank.get(r.nozzle_id as string)
+        const litres = Number(r.litres_sold ?? 0)
+        if (!tankId || litres === 0) continue
+        tankRestore.set(tankId, (tankRestore.get(tankId) ?? 0) + litres)
+      }
+      const updateTankStock = useAppStore.getState().updateTankStock
+      for (const [tankId, litres] of tankRestore) {
+        await updateTankStock(tankId, +litres)
+      }
+    }
+
+    // Wipe ledger first, then shifts (which cascades the four shift-child tables).
+    const cleanups = await Promise.all([
+      supabase.from('customer_ledger').delete().not('shift_id', 'is', null),
+      supabase.from('shifts').delete().not('id', 'is', null),
+    ])
+    for (const c of cleanups) {
+      if (c.error) throw new Error(`Reset failed: ${c.error.message}`)
+    }
+
+    set({
+      shifts: [],
+      nozzleReadings: [],
+      otherSales: [],
+      electronicEntries: [],
+      expenseEntries: [],
+      creditEntries: [],
+    })
   },
 
   addDelivery: async (d) => {
