@@ -741,10 +741,15 @@ function OtherSalesAddRow({ categories, items, onAdd }: OtherSalesAddRowProps) {
     setDiscount('0')
   }
 
+  // Field styling — shared across all five inputs/selects so they line up.
+  const fieldCls =
+    'w-full px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-60'
+
   return (
-    <div className="flex flex-col gap-2 px-3 py-3 rounded-xl border border-outline-variant bg-surface-container-lowest">
-      <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_6rem_6rem_auto] gap-2 items-end">
-        <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-3 px-3 py-3 rounded-xl border border-outline-variant bg-surface-container-lowest">
+      {/* Row 1: Category + Product. Stacks on phone, side-by-side from sm+ */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div className="flex flex-col gap-1 min-w-0">
           <label className="text-on-surface-variant text-xs">Category</label>
           <select
             value={categoryId}
@@ -752,7 +757,7 @@ function OtherSalesAddRow({ categories, items, onAdd }: OtherSalesAddRowProps) {
               setCategoryId(e.target.value)
               setItemId('')
             }}
-            className="px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+            className={fieldCls}
           >
             <option value="">Select category…</option>
             {categories.map((c) => (
@@ -762,13 +767,13 @@ function OtherSalesAddRow({ categories, items, onAdd }: OtherSalesAddRowProps) {
             ))}
           </select>
         </div>
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1 min-w-0">
           <label className="text-on-surface-variant text-xs">Product</label>
           <select
             value={itemId}
             onChange={(e) => setItemId(e.target.value)}
             disabled={categoryId === ''}
-            className="px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-60"
+            className={fieldCls}
           >
             <option value="">
               {categoryId === ''
@@ -784,7 +789,12 @@ function OtherSalesAddRow({ categories, items, onAdd }: OtherSalesAddRowProps) {
             ))}
           </select>
         </div>
-        <div className="flex flex-col gap-1">
+      </div>
+
+      {/* Row 2: Quantity + Discount + Add. Add button is its own grid track
+          so it never gets clipped by overflow. */}
+      <div className="grid grid-cols-2 sm:grid-cols-[1fr_1fr_auto] gap-2 items-end">
+        <div className="flex flex-col gap-1 min-w-0">
           <label className="text-on-surface-variant text-xs">Quantity</label>
           <input
             type="number"
@@ -794,10 +804,10 @@ function OtherSalesAddRow({ categories, items, onAdd }: OtherSalesAddRowProps) {
             value={quantity}
             onChange={(e) => setQuantity(e.target.value)}
             placeholder="Qty"
-            className="px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+            className={fieldCls}
           />
         </div>
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1 min-w-0">
           <label className="text-on-surface-variant text-xs">Discount (₹)</label>
           <input
             type="number"
@@ -807,18 +817,20 @@ function OtherSalesAddRow({ categories, items, onAdd }: OtherSalesAddRowProps) {
             value={discount}
             onChange={(e) => setDiscount(e.target.value)}
             placeholder="0"
-            className="px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+            className={fieldCls}
           />
         </div>
         <button
           type="button"
           onClick={handleAdd}
           disabled={!canAdd}
-          className="px-3 py-2 rounded-lg text-xs font-medium bg-primary text-on-primary hover:opacity-90 disabled:opacity-60"
+          className="col-span-2 sm:col-span-1 whitespace-nowrap px-4 py-2 rounded-lg text-sm font-semibold bg-primary text-on-primary hover:opacity-90 disabled:opacity-60"
         >
           + Add
         </button>
       </div>
+
+      {/* Live preview — wraps naturally if narrow */}
       <div className="text-on-surface-variant text-xs break-words">
         {qtyValid ? qtyNum.toLocaleString('en-IN') : 0} × ₹
         {unitPrice.toLocaleString('en-IN')} − ₹
@@ -1561,19 +1573,23 @@ export function CloseShiftModal({ shift, onClose }: CloseShiftModalProps) {
                   {otherSalesEntries.map((e, i) => (
                     <div
                       key={i}
-                      className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-surface-container text-sm"
+                      className="flex items-start justify-between gap-3 px-3 py-2 rounded-lg bg-surface-container text-sm"
                     >
-                      <span className="text-on-surface break-words">
-                        {e.categoryName} · {e.itemName} · {e.quantity} × ₹
-                        {e.unitPrice.toLocaleString('en-IN')} − ₹
-                        {e.discount.toLocaleString('en-IN')} = ₹
-                        {e.amount.toLocaleString('en-IN')}
-                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-on-surface font-medium break-words">
+                          {e.categoryName} · {e.itemName}
+                        </p>
+                        <p className="text-on-surface-variant text-xs break-words">
+                          {e.quantity} × ₹{e.unitPrice.toLocaleString('en-IN')} − ₹
+                          {e.discount.toLocaleString('en-IN')} = ₹
+                          {e.amount.toLocaleString('en-IN')}
+                        </p>
+                      </div>
                       <button
                         type="button"
                         onClick={() => handleRemoveOtherSale(i)}
                         aria-label="Remove entry"
-                        className="text-on-surface-variant hover:text-rose-600"
+                        className="flex-shrink-0 text-on-surface-variant hover:text-rose-600 px-2 py-1"
                       >
                         ×
                       </button>
