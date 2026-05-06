@@ -46,6 +46,7 @@ interface AppState {
   deleteUser: (id: string) => Promise<void>
   updateTankStock: (tankId: string, delta: number) => Promise<void>
   updateFuelPrice: (id: string, pricePerLitre: number) => Promise<void>
+  setFuelPrice: (fuelType: 'MS' | 'HSD', pricePerLitre: number) => Promise<void>
   addOtherSalesCategory: (category: Omit<OtherSalesCategory, 'id'>) => Promise<void>
   updateOtherSalesCategory: (id: string, data: Partial<OtherSalesCategory>) => Promise<void>
   deleteOtherSalesCategory: (id: string) => Promise<void>
@@ -485,6 +486,29 @@ export const useAppStore = create<AppState>((set, get) => ({
       fuelPrices: s.fuelPrices.map((p) => (p.id === id ? { ...p, pricePerLitre } : p)),
     }))
     await supabase.from('fuel_prices').update({ price_per_litre: pricePerLitre }).eq('id', id)
+  },
+
+  setFuelPrice: async (fuelType, pricePerLitre) => {
+    // Upsert: update if a row for this fuelType exists, insert otherwise.
+    const existing = get().fuelPrices.find((p) => p.fuelType === fuelType)
+    if (existing) {
+      await get().updateFuelPrice(existing.id, pricePerLitre)
+      return
+    }
+    const { data, error } = await supabase
+      .from('fuel_prices')
+      .insert({ bunk_id: BUNK_ID, fuel_type: fuelType, price_per_litre: pricePerLitre })
+      .select()
+      .single()
+    if (error) throw new Error(error.message)
+    if (!data) throw new Error('Fuel price insert returned no row')
+    set((s) => ({
+      fuelPrices: [...s.fuelPrices, {
+        id: data.id as string,
+        fuelType: data.fuel_type as 'MS' | 'HSD',
+        pricePerLitre: Number(data.price_per_litre),
+      }],
+    }))
   },
 
   updateTankStock: async (tankId, delta) => {

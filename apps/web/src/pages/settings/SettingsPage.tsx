@@ -2007,88 +2007,110 @@ function ExpenseCategoriesTab() {
 
 /* ── Fuel Prices Tab ── */
 function FuelPricesTab() {
-  const { fuelPrices, updateFuelPrice } = useAppStore()
-  const [editing, setEditing] = useState<Record<string, string>>({})
-  const [saved, setSaved] = useState<Record<string, boolean>>({})
+  const { fuelPrices, setFuelPrice } = useAppStore()
+  // Per-fuel local edit state — keyed by fuel type so the row works even
+  // when no DB row exists yet (setFuelPrice upserts on save).
+  const [editing, setEditing] = useState<Record<FuelType, string | undefined>>({ MS: undefined, HSD: undefined })
+  const [saved, setSaved] = useState<Record<FuelType, boolean>>({ MS: false, HSD: false })
+  const [error, setError] = useState<string | null>(null)
 
-  const visiblePrices = useMemo(
-    () => fuelPrices.filter((p) => (FUEL_TYPES as readonly string[]).includes(p.fuelType)),
-    [fuelPrices],
-  )
-
-  function startEdit(id: string, current: number) {
-    setEditing((prev) => ({ ...prev, [id]: String(current) }))
+  function priceFor(fuel: FuelType): number {
+    return fuelPrices.find((p) => p.fuelType === fuel)?.pricePerLitre ?? 0
   }
 
-  async function handleSave(id: string) {
-    const val = parseFloat(editing[id] ?? '')
-    if (isNaN(val) || val <= 0) return
-    await updateFuelPrice(id, val)
-    setEditing((prev) => { const n = { ...prev }; delete n[id]; return n })
-    setSaved((prev) => ({ ...prev, [id]: true }))
-    setTimeout(() => setSaved((prev) => { const n = { ...prev }; delete n[id]; return n }), 2000)
+  function startEdit(fuel: FuelType) {
+    setError(null)
+    setEditing((prev) => ({ ...prev, [fuel]: String(priceFor(fuel) || '') }))
   }
 
-  function handleCancel(id: string) {
-    setEditing((prev) => { const n = { ...prev }; delete n[id]; return n })
+  async function handleSave(fuel: FuelType) {
+    const raw = editing[fuel] ?? ''
+    const val = parseFloat(raw)
+    if (Number.isNaN(val) || val <= 0) {
+      setError(`Enter a positive price for ${FUEL_LABELS[fuel]}`)
+      return
+    }
+    try {
+      await setFuelPrice(fuel, val)
+      setEditing((prev) => ({ ...prev, [fuel]: undefined }))
+      setSaved((prev) => ({ ...prev, [fuel]: true }))
+      setTimeout(() => setSaved((prev) => ({ ...prev, [fuel]: false })), 2000)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to save price')
+    }
   }
 
-  if (visiblePrices.length === 0) {
-    return <p className="text-on-surface-variant text-sm">No fuel prices found. Run SQL_SETUP.sql to seed data.</p>
+  function handleCancel(fuel: FuelType) {
+    setError(null)
+    setEditing((prev) => ({ ...prev, [fuel]: undefined }))
   }
 
   return (
     <div className="max-w-lg flex flex-col gap-4">
-      <p className="text-on-surface-variant text-sm">Update the selling price per litre for each fuel type. Changes apply to all new shift calculations.</p>
-      {visiblePrices.map((p) => (
-        <div key={p.id} className="bg-surface-container-lowest rounded-xl border border-outline-variant p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0 flex-1">
-            <div className="size-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-              <span className="material-symbols-outlined text-[18px] text-primary">local_offer</span>
+      <p className="text-on-surface-variant text-sm">
+        Per-litre selling price for each fuel. Used in the close-shift{' '}
+        <strong>Testing</strong> section to auto-compute CumSale from CumVolume
+        (you can still override per shift if the slip differs).
+      </p>
+      {(FUEL_TYPES as readonly FuelType[]).map((fuel) => {
+        const isEditing = editing[fuel] !== undefined
+        const current = priceFor(fuel)
+        return (
+          <div
+            key={fuel}
+            className="bg-surface-container-lowest rounded-xl border border-outline-variant p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+          >
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <div className="size-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <span className="material-symbols-outlined text-[18px] text-primary">local_offer</span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-on-surface font-semibold text-sm truncate">{FUEL_LABELS[fuel]}</p>
+                {!isEditing && (
+                  <p className="text-on-surface-variant text-xs">
+                    {current > 0 ? `₹${current.toFixed(2)} / litre` : 'Not set — tap edit to add'}
+                  </p>
+                )}
+              </div>
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-on-surface font-semibold text-sm truncate">{FUEL_LABELS[p.fuelType]}</p>
-              {editing[p.id] === undefined && (
-                <p className="text-on-surface-variant text-xs">₹{p.pricePerLitre.toFixed(2)} / litre</p>
+            <div className="flex items-center gap-2 flex-shrink-0 w-full sm:w-auto">
+              {isEditing ? (
+                <>
+                  <div className="relative flex-1 sm:flex-initial">
+                    <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 text-on-surface-variant text-sm pointer-events-none">₹</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={editing[fuel] ?? ''}
+                      onChange={(e) => setEditing((prev) => ({ ...prev, [fuel]: e.target.value }))}
+                      className="w-full sm:w-28 pl-6 pr-2 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      autoFocus
+                    />
+                  </div>
+                  <button onClick={() => handleSave(fuel)} className="px-3 py-2 rounded-lg bg-primary text-on-primary text-xs font-semibold hover:opacity-90 transition-opacity">
+                    Save
+                  </button>
+                  <button onClick={() => handleCancel(fuel)} className="px-3 py-2 rounded-lg border border-outline-variant text-on-surface-variant text-xs font-medium hover:bg-surface-container transition-colors">
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <>
+                  {saved[fuel] && <span className="text-emerald-600 text-xs font-medium">✓ Saved</span>}
+                  <button
+                    onClick={() => startEdit(fuel)}
+                    className="ml-auto sm:ml-0 px-3 py-2 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors text-sm font-medium"
+                  >
+                    {current > 0 ? 'Edit' : 'Set price'}
+                  </button>
+                </>
               )}
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0 w-full sm:w-auto">
-            {editing[p.id] !== undefined ? (
-              <>
-                <div className="relative flex-1 sm:flex-initial">
-                  <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 text-on-surface-variant text-sm pointer-events-none">₹</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={editing[p.id]}
-                    onChange={(e) => setEditing((prev) => ({ ...prev, [p.id]: e.target.value }))}
-                    className="w-full sm:w-28 pl-6 pr-2 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                    autoFocus
-                  />
-                </div>
-                <button onClick={() => handleSave(p.id)} className="px-3 py-2 rounded-lg bg-primary text-on-primary text-xs font-semibold hover:opacity-90 transition-opacity">
-                  Save
-                </button>
-                <button onClick={() => handleCancel(p.id)} className="px-3 py-2 rounded-lg border border-outline-variant text-on-surface-variant text-xs font-medium hover:bg-surface-container transition-colors">
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <>
-                {saved[p.id] && <span className="text-emerald-600 text-xs font-medium">✓ Saved</span>}
-                <button
-                  onClick={() => startEdit(p.id, p.pricePerLitre)}
-                  className="ml-auto sm:ml-0 p-2 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors"
-                >
-                  <span className="material-symbols-outlined text-[18px]">edit</span>
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      ))}
+        )
+      })}
+      {error && <p className="text-rose-600 text-xs font-medium">{error}</p>}
     </div>
   )
 }

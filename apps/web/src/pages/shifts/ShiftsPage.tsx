@@ -980,6 +980,10 @@ export function CloseShiftModal({ shift, onClose }: CloseShiftModalProps) {
   const electronicMethods = useAppStore((s) => s.electronicMethods)
   const expenseCategoriesCatalog = useAppStore((s) => s.expenseCategories)
   const customers = useAppStore((s) => s.customers)
+  const fuelPrices = useAppStore((s) => s.fuelPrices)
+  // Per-fuel rates used by the testing section to auto-compute CumSale.
+  const msRate = fuelPrices.find((p) => p.fuelType === 'MS')?.pricePerLitre ?? 0
+  const hsdRate = fuelPrices.find((p) => p.fuelType === 'HSD')?.pricePerLitre ?? 0
 
   const activeOtherSalesCategories = useMemo(
     () => otherSalesCategories.filter((c) => c.active),
@@ -1495,47 +1499,75 @@ export function CloseShiftModal({ shift, onClose }: CloseShiftModalProps) {
               </h3>
               <p className="text-on-surface-variant text-xs">
                 Volume and sale value drained for daily density / quality testing — subtracted from totals.
+                CumSale auto-fills from <strong>Volume × rate</strong> (rate from Settings → Fuel Prices); override per shift if the slip differs.
               </p>
               {(['MS', 'HSD'] as const).map((fuel) => {
                 const volKey = fuel === 'MS' ? 'msVolume' : 'hsdVolume'
                 const saleKey = fuel === 'MS' ? 'msSale' : 'hsdSale'
+                const rate = fuel === 'MS' ? msRate : hsdRate
+                const volStr = testing[volKey]
+                const volNum = volStr === '' ? 0 : Number(volStr) || 0
+                const computedSale = rate > 0 ? volNum * rate : 0
                 return (
                   <div
                     key={fuel}
-                    className="grid grid-cols-1 sm:grid-cols-[8rem_1fr_1fr] gap-2 items-end px-3 py-2 rounded-xl border border-outline-variant bg-surface-container-lowest"
+                    className="px-3 py-2 rounded-xl border border-outline-variant bg-surface-container-lowest"
                   >
-                    <div className="text-on-surface text-sm font-medium">
-                      {FUEL_LABELS[fuel]}
+                    <div className="flex items-baseline justify-between gap-2 mb-2">
+                      <span className="text-on-surface text-sm font-medium">{FUEL_LABELS[fuel]}</span>
+                      <span className="text-on-surface-variant text-xs">
+                        {rate > 0 ? `Rate: ₹${rate.toFixed(2)}/L` : 'Rate not set'}
+                      </span>
                     </div>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-on-surface-variant text-xs">CumVolume (L)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        inputMode="decimal"
-                        value={testing[volKey]}
-                        onChange={(e) =>
-                          setTesting((prev) => ({ ...prev, [volKey]: e.target.value }))
-                        }
-                        placeholder="0"
-                        className="px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-sm"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-on-surface-variant text-xs">CumSale (₹)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        inputMode="decimal"
-                        value={testing[saleKey]}
-                        onChange={(e) =>
-                          setTesting((prev) => ({ ...prev, [saleKey]: e.target.value }))
-                        }
-                        placeholder="0"
-                        className="px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-sm"
-                      />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-end">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-on-surface-variant text-xs">CumVolume (L)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          inputMode="decimal"
+                          value={volStr}
+                          onChange={(e) => {
+                            const next = e.target.value
+                            setTesting((prev) => {
+                              // Auto-fill the matching CumSale from volume × rate.
+                              // Owner can still override the sale field afterward.
+                              const nextNum = next === '' ? 0 : Number(next) || 0
+                              const autoSale = rate > 0 ? nextNum * rate : 0
+                              return {
+                                ...prev,
+                                [volKey]: next,
+                                [saleKey]: next === '' ? '' : autoSale.toFixed(2),
+                              }
+                            })
+                          }}
+                          placeholder="0"
+                          className="px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-sm"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-on-surface-variant text-xs">
+                          CumSale (₹){' '}
+                          {rate > 0 && volNum > 0 && (
+                            <span className="text-on-surface-variant">
+                              · suggested ₹{computedSale.toFixed(2)}
+                            </span>
+                          )}
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          inputMode="decimal"
+                          value={testing[saleKey]}
+                          onChange={(e) =>
+                            setTesting((prev) => ({ ...prev, [saleKey]: e.target.value }))
+                          }
+                          placeholder="0"
+                          className="px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-sm"
+                        />
+                      </div>
                     </div>
                   </div>
                 )
