@@ -14,7 +14,28 @@ import type {
   ElectronicMethod,
   ExpenseCategory,
   Customer,
+  BankDeposit,
 } from '@/types'
+
+interface UpsertBankDepositInput {
+  depositDate: string
+  expectedAmount: number
+  depositedAmount: number
+  depositedByUserId: string | null
+  notes: string | null
+}
+
+function rowToBankDeposit(r: Record<string, unknown>): BankDeposit {
+  return {
+    id: r.id as string,
+    depositDate: r.deposit_date as string,
+    expectedAmount: Number(r.expected_amount ?? 0),
+    depositedAmount: Number(r.deposited_amount ?? 0),
+    pettyCash: Number(r.petty_cash ?? 0),
+    depositedByUserId: (r.deposited_by_user_id as string | null) ?? null,
+    notes: (r.notes as string | null) ?? null,
+  }
+}
 
 interface AppState {
   bunk: BunkProfile
@@ -28,9 +49,13 @@ interface AppState {
   electronicMethods: ElectronicMethod[]
   expenseCategories: ExpenseCategory[]
   customers: Customer[]
+  bankDeposits: BankDeposit[]
   loading: boolean
   loadAll: () => Promise<void>
   loadDispenserUnits: () => Promise<void>
+  loadBankDeposits: () => Promise<void>
+  upsertBankDeposit: (data: UpsertBankDepositInput) => Promise<void>
+  deleteBankDeposit: (id: string) => Promise<void>
   updateBunk: (data: Partial<BunkProfile>) => Promise<void>
   addTank: (t: Omit<Tank, 'id'>) => Promise<void>
   updateTank: (id: string, data: Partial<Tank>) => Promise<void>
@@ -82,6 +107,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   electronicMethods: [],
   expenseCategories: [],
   customers: [],
+  bankDeposits: [],
   loading: false,
 
   loadAll: async () => {
@@ -99,6 +125,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         electronicMethodsRes,
         expenseCategoriesRes,
         customersRes,
+        bankDepositsRes,
       ] = await Promise.all([
         supabase.from('bunks').select('*').eq('id', BUNK_ID).single(),
         supabase.from('tanks').select('*').eq('bunk_id', BUNK_ID).order('created_at'),
@@ -111,6 +138,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         supabase.from('electronic_methods').select('*').eq('bunk_id', BUNK_ID).order('created_at'),
         supabase.from('expense_categories').select('*').eq('bunk_id', BUNK_ID).order('created_at'),
         supabase.from('customers').select('*').eq('bunk_id', BUNK_ID).order('created_at'),
+        supabase.from('bank_deposits').select('*').eq('bunk_id', BUNK_ID).order('deposit_date', { ascending: false }),
       ])
 
       if (otherSalesCategoriesRes.data) {
@@ -231,8 +259,66 @@ export const useAppStore = create<AppState>((set, get) => ({
           })),
         })
       }
+
+      if (bankDepositsRes.data) {
+        set({
+          bankDeposits: (bankDepositsRes.data as Record<string, unknown>[]).map(rowToBankDeposit),
+        })
+      }
     } finally {
       set({ loading: false })
+    }
+  },
+
+  loadBankDeposits: async () => {
+    const { data } = await supabase
+      .from('bank_deposits')
+      .select('*')
+      .eq('bunk_id', BUNK_ID)
+      .order('deposit_date', { ascending: false })
+    if (data) {
+      set({ bankDeposits: (data as Record<string, unknown>[]).map(rowToBankDeposit) })
+    }
+  },
+
+  upsertBankDeposit: async ({ depositDate, expectedAmount, depositedAmount, depositedByUserId, notes }) => {
+    // Petty cash is the residual: what was expected to be banked vs. what
+    // was actually banked. Positive = manager kept some, negative = an
+    // overpayment to the bank that needs investigation.
+    const pettyCash = expectedAmount - depositedAmount
+    const { data, error } = await supabase
+      .from('bank_deposits')
+      .upsert(
+        {
+          bunk_id: BUNK_ID,
+          deposit_date: depositDate,
+          expected_amount: expectedAmount,
+          deposited_amount: depositedAmount,
+          petty_cash: pettyCash,
+          deposited_by_user_id: depositedByUserId,
+          notes,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'bunk_id,deposit_date' },
+      )
+      .select()
+      .single()
+    if (error) throw new Error(error.message)
+    if (!data) throw new Error('Bank deposit upsert returned no row')
+    const next = rowToBankDeposit(data as Record<string, unknown>)
+    set((s) => {
+      const others = s.bankDeposits.filter((b) => b.depositDate !== depositDate)
+      return { bankDeposits: [next, ...others].sort((a, b) => b.depositDate.localeCompare(a.depositDate)) }
+    })
+  },
+
+  deleteBankDeposit: async (id) => {
+    const previous = get().bankDeposits
+    set((s) => ({ bankDeposits: s.bankDeposits.filter((b) => b.id !== id) }))
+    const { error } = await supabase.from('bank_deposits').delete().eq('id', id)
+    if (error) {
+      set({ bankDeposits: previous })
+      throw new Error(error.message)
     }
   },
 

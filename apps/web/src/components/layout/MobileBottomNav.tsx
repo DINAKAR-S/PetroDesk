@@ -13,12 +13,14 @@ const BOTTOM_NAV_ITEMS: Record<Role, BottomNavItem[]> = {
   owner: [
     { label: 'Home', icon: 'home', path: '/' },
     { label: 'Shifts', icon: 'schedule', path: '/shifts' },
+    { label: 'Khaata', icon: 'account_balance_wallet', path: '/customers' },
     { label: 'Reports', icon: 'bar_chart', path: '/reports' },
     { label: 'Settings', icon: 'settings', path: '/settings' },
   ],
   manager: [
     { label: 'Home', icon: 'home', path: '/' },
     { label: 'Shifts', icon: 'schedule', path: '/shifts' },
+    { label: 'Khaata', icon: 'account_balance_wallet', path: '/customers' },
     { label: 'Reports', icon: 'bar_chart', path: '/reports' },
     { label: 'Settings', icon: 'settings', path: '/settings' },
   ],

@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from '@/store/authStore'
 import { useAppStore } from '@/store/appStore'
 import { useShiftsStore } from '@/store/shiftsStore'
+import { useCustomersStore } from '@/store/customersStore'
 // useAuthStore.logout is invoked in DataLoader if the persisted user disappears.
 import LoginPage from '@/pages/auth/LoginPage'
 import RoleSelectorPage from '@/pages/auth/RoleSelectorPage'
@@ -13,10 +14,13 @@ import SalesmanDashboard from '@/pages/dashboard/SalesmanDashboard'
 import SettingsPage from '@/pages/settings/SettingsPage'
 import ShiftsPage from '@/pages/shifts/ShiftsPage'
 import ReportsPage from '@/pages/reports/ReportsPage'
+import CustomersPage from '@/pages/customers/CustomersPage'
+import CustomerDetailPage from '@/pages/customers/CustomerDetailPage'
 
 function DataLoader() {
-  const { loadAll, users } = useAppStore()
+  const { loadAll, users, customers } = useAppStore()
   const { loadShifts, loadDeliveries, loadExpenses } = useShiftsStore()
+  const { loadLedgerEntries } = useCustomersStore()
   const { currentUser, isAuthenticated, logout } = useAuthStore()
 
   useEffect(() => {
@@ -25,6 +29,13 @@ function DataLoader() {
     loadDeliveries()
     loadExpenses()
   }, [loadAll, loadShifts, loadDeliveries, loadExpenses])
+
+  // Load ledger entries after customers have arrived so the store can scope
+  // by customer_id (the table has no bunk_id column).
+  useEffect(() => {
+    if (customers.length === 0) return
+    loadLedgerEntries()
+  }, [customers, loadLedgerEntries])
 
   // Stale-auth detection: after data loads, if the persisted user no longer
   // exists in the staff list (e.g. DB was wiped), force a clean logout so we
@@ -70,6 +81,8 @@ export default function App() {
           <Route index element={<DashboardRoute />} />
           <Route path="shifts" element={<ShiftsPage />} />
           <Route path="reports" element={<ReportsPage />} />
+          <Route path="customers" element={<CustomersPage />} />
+          <Route path="customers/:id" element={<CustomerDetailPage />} />
           <Route path="inventory" element={<Navigate to="/shifts" replace />} />
           <Route path="staff" element={<Navigate to="/settings" replace />} />
           <Route path="settings" element={<SettingsPage />} />

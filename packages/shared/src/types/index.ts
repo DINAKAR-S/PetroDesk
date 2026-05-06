@@ -155,6 +155,29 @@ export interface ShiftCreditEntry {
   amount: number
 }
 
+export type CustomerLedgerEntryType = 'credit_taken' | 'settlement'
+
+export interface CustomerLedgerEntry {
+  id: string
+  customerId: string
+  shiftId: string | null
+  entryType: CustomerLedgerEntryType
+  amount: number
+  notes: string | null
+  photoUrl: string | null
+  createdAt: string
+}
+
+export interface BankDeposit {
+  id: string
+  depositDate: string
+  expectedAmount: number
+  depositedAmount: number
+  pettyCash: number
+  depositedByUserId: string | null
+  notes: string | null
+}
+
 export interface NozzleReading {
   id: string
   shiftId: string

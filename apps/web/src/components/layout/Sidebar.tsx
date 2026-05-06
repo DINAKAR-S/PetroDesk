@@ -9,12 +9,14 @@ const NAV_ITEMS: Record<Role, NavItem[]> = {
   owner: [
     { label: 'Dashboard', icon: 'home', path: '/' },
     { label: 'Shifts', icon: 'schedule', path: '/shifts' },
+    { label: 'Customers', icon: 'account_balance_wallet', path: '/customers' },
     { label: 'Reports', icon: 'bar_chart', path: '/reports' },
     { label: 'Settings', icon: 'settings', path: '/settings' },
   ],
   manager: [
     { label: 'Dashboard', icon: 'home', path: '/' },
     { label: 'Shifts', icon: 'schedule', path: '/shifts' },
+    { label: 'Customers', icon: 'account_balance_wallet', path: '/customers' },
     { label: 'Reports', icon: 'bar_chart', path: '/reports' },
     { label: 'Settings', icon: 'settings', path: '/settings' },
   ],

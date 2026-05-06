@@ -1,5 +1,7 @@
+import { useNavigate } from 'react-router-dom'
 import { useAppStore } from '@/store/appStore'
 import { useShiftsStore, type DateFilter } from '@/store/shiftsStore'
+import { useCustomersStore } from '@/store/customersStore'
 import { cn, stockPercent } from '@/lib/utils'
 
 const DATE_FILTERS: { label: string; value: DateFilter }[] = [
@@ -17,8 +19,10 @@ const STATUS_STYLES: Record<string, string> = {
 }
 
 export default function OwnerDashboard() {
+  const navigate = useNavigate()
   const { tanks } = useAppStore()
   const { shifts, dateFilter, statusFilter, setDateFilter, setStatusFilter, loading } = useShiftsStore()
+  const totalOutstanding = useCustomersStore((s) => s.getTotalOutstanding())
 
   const closedShifts = shifts.filter((s) => s.status === 'closed')
   const totalRevenue = closedShifts.reduce((sum, s) => sum + s.totalCashCollected, 0)
@@ -27,6 +31,21 @@ export default function OwnerDashboard() {
   const flaggedCount = shifts.filter((s) => s.status === 'flagged').length
 
   const filteredShifts = statusFilter === 'all' ? shifts : shifts.filter((s) => s.status === statusFilter)
+
+  // "Card / UPI today" — sum totalElectronic across closed shifts whose closedAt
+  // (fallback openedAt) falls within the local calendar day. Uses the shift
+  // aggregate column rather than the per-entry table because electronicEntries
+  // is only populated when a shift detail is opened.
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+  const todayEnd = new Date()
+  todayEnd.setHours(23, 59, 59, 999)
+  const electronicToday = shifts.reduce((sum, s) => {
+    const stamp = s.closedAt ?? s.openedAt
+    const t = new Date(stamp).getTime()
+    if (t < todayStart.getTime() || t > todayEnd.getTime()) return sum
+    return sum + (s.totalElectronic ?? 0)
+  }, 0)
 
   return (
     <div className="flex flex-col gap-6 sm:gap-8">
@@ -67,7 +86,7 @@ export default function OwnerDashboard() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">
         <div className="bg-surface-container-lowest p-4 sm:p-6 rounded-xl border border-outline-variant shadow-sm">
           <p className="text-on-surface-variant text-sm font-medium">Revenue</p>
           <p className="text-on-surface text-xl sm:text-2xl font-bold mt-2 break-words">
@@ -95,6 +114,24 @@ export default function OwnerDashboard() {
             {flaggedCount}
           </p>
           <p className="text-on-surface-variant text-xs mt-1">need review</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => navigate('/customers')}
+          className="text-left bg-surface-container-lowest p-4 sm:p-6 rounded-xl border border-outline-variant shadow-sm hover:border-primary/40 hover:shadow-md transition-all"
+        >
+          <p className="text-on-surface-variant text-sm font-medium">Credit Outstanding</p>
+          <p className={cn('text-xl sm:text-2xl font-bold mt-2 break-words', totalOutstanding > 0 ? 'text-rose-600' : 'text-on-surface')}>
+            ₹{totalOutstanding.toLocaleString('en-IN')}
+          </p>
+          <p className="text-on-surface-variant text-xs mt-1">view khaata</p>
+        </button>
+        <div className="bg-surface-container-lowest p-4 sm:p-6 rounded-xl border border-outline-variant shadow-sm">
+          <p className="text-on-surface-variant text-sm font-medium">Card / UPI today</p>
+          <p className="text-on-surface text-xl sm:text-2xl font-bold mt-2 break-words">
+            ₹{electronicToday.toLocaleString('en-IN')}
+          </p>
+          <p className="text-on-surface-variant text-xs mt-1">across today's shifts</p>
         </div>
       </div>
 

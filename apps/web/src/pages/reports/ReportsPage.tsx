@@ -1,11 +1,82 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useShiftsStore, type DateFilter } from '@/store/shiftsStore'
 import { useAppStore } from '@/store/appStore'
+import { useAuthStore } from '@/store/authStore'
 import { cn } from '@/lib/utils'
 import { FUEL_LABELS, VAT_RATES, FUEL_TYPES, EXPENSE_CATEGORIES } from '@/lib/constants'
-import type { TankerDelivery, Expense, FuelType } from '@/types'
+import { generateShiftReport } from '@/lib/pdf'
+import type { TankerDelivery, Expense, FuelType, Nozzle } from '@/types'
 
-type Tab = 'daily' | 'tax' | 'deliveries' | 'expenses'
+type ExportPreset = 'today' | 'yesterday' | 'last7' | 'thisMonth' | 'lastMonth' | 'custom'
+
+const EXPORT_PRESETS: { label: string; value: ExportPreset }[] = [
+  { label: 'Today', value: 'today' },
+  { label: 'Yesterday', value: 'yesterday' },
+  { label: 'Last 7 days', value: 'last7' },
+  { label: 'This Month', value: 'thisMonth' },
+  { label: 'Last Month', value: 'lastMonth' },
+  { label: 'Custom', value: 'custom' },
+]
+
+function startOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0)
+}
+
+function endOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)
+}
+
+function parseLocalDate(yyyyMmDd: string): Date {
+  const [y, m, d] = yyyyMmDd.split('-').map(Number)
+  return new Date(y, (m ?? 1) - 1, d ?? 1)
+}
+
+function rangeForPreset(
+  preset: ExportPreset,
+  customFrom: string,
+  customTo: string,
+): { start: Date; end: Date } | null {
+  const now = new Date()
+  if (preset === 'today') return { start: startOfDay(now), end: endOfDay(now) }
+  if (preset === 'yesterday') {
+    const y = new Date(now)
+    y.setDate(y.getDate() - 1)
+    return { start: startOfDay(y), end: endOfDay(y) }
+  }
+  if (preset === 'last7') {
+    const start = new Date(now)
+    start.setDate(start.getDate() - 6)
+    return { start: startOfDay(start), end: endOfDay(now) }
+  }
+  if (preset === 'thisMonth') {
+    return { start: startOfDay(new Date(now.getFullYear(), now.getMonth(), 1)), end: endOfDay(now) }
+  }
+  if (preset === 'lastMonth') {
+    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const end = new Date(now.getFullYear(), now.getMonth(), 0)
+    return { start: startOfDay(start), end: endOfDay(end) }
+  }
+  if (preset === 'custom') {
+    if (!customFrom || !customTo) return null
+    const start = startOfDay(parseLocalDate(customFrom))
+    const end = endOfDay(parseLocalDate(customTo))
+    if (end < start) return null
+    return { start, end }
+  }
+  return null
+}
+
+function formatRangeLabel(start: Date, end: Date): string {
+  const fmt = (d: Date) =>
+    d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+  const sameDay =
+    start.getFullYear() === end.getFullYear() &&
+    start.getMonth() === end.getMonth() &&
+    start.getDate() === end.getDate()
+  return sameDay ? fmt(start) : `${fmt(start)} — ${fmt(end)}`
+}
+
+type Tab = 'daily' | 'tax' | 'deliveries' | 'expenses' | 'bank'
 
 const DATE_FILTERS: { label: string; value: DateFilter }[] = [
   { label: 'Today', value: 'today' },
@@ -14,11 +85,12 @@ const DATE_FILTERS: { label: string; value: DateFilter }[] = [
   { label: 'All', value: 'all' },
 ]
 
-const TABS: { label: string; value: Tab }[] = [
+const ALL_TABS: { label: string; value: Tab; ownerOnly?: boolean }[] = [
   { label: 'Daily Sales', value: 'daily' },
   { label: 'Tax / VAT Report', value: 'tax' },
   { label: 'Tanker Deliveries', value: 'deliveries' },
   { label: 'Expenses', value: 'expenses' },
+  { label: 'Bank Deposits', value: 'bank', ownerOnly: true },
 ]
 
 function formatDate(dateStr: string): string {
@@ -194,8 +266,112 @@ export default function ReportsPage() {
   const [activeTab, setActiveTab] = useState<Tab>('daily')
   const [deliveryModal, setDeliveryModal] = useState<{ open: boolean; item?: TankerDelivery }>({ open: false })
   const [expenseModal, setExpenseModal] = useState<{ open: boolean; item?: Expense }>({ open: false })
+  const [exportPreset, setExportPreset] = useState<ExportPreset>('today')
+  const [customFrom, setCustomFrom] = useState<string>(today())
+  const [customTo, setCustomTo] = useState<string>(today())
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
+
+  // ── Bank Deposits state ─────────────────────────────────────
+  const [bankPreset, setBankPreset] = useState<ExportPreset>('today')
+  const [bankCustomFrom, setBankCustomFrom] = useState<string>(today())
+  const [bankCustomTo, setBankCustomTo] = useState<string>(today())
+  // Per-row in-flight inputs (depositedAmount + notes). Keyed by depositDate.
+  const [bankRowDrafts, setBankRowDrafts] = useState<Record<string, { depositedAmount: string; notes: string }>>({})
+  const [bankSavingDate, setBankSavingDate] = useState<string | null>(null)
+  const [bankError, setBankError] = useState<string | null>(null)
 
   const { shifts, deliveries, expenses, dateFilter, setDateFilter, loading, addDelivery, updateDelivery, deleteDelivery, addExpense, updateExpense, deleteExpense } = useShiftsStore()
+  const { dispenserUnits, nozzles, fuelPrices, bunk, bankDeposits, upsertBankDeposit } = useAppStore()
+  const currentUser = useAuthStore((s) => s.currentUser)
+  const canExport = currentUser?.role === 'owner' || currentUser?.role === 'manager'
+  const canSeeBankTab = currentUser?.role === 'owner' || currentUser?.role === 'manager'
+
+  // Tabs visible to the current role. Salesman never sees the Bank tab.
+  const TABS = useMemo(
+    () => ALL_TABS.filter((t) => !t.ownerOnly || canSeeBankTab),
+    [canSeeBankTab],
+  )
+
+  const nozzlesById = useMemo(() => {
+    const m = new Map<string, Nozzle>()
+    for (const n of nozzles) m.set(n.id, n)
+    return m
+  }, [nozzles])
+
+  async function handleExportPdf() {
+    setExportError(null)
+    const range = rangeForPreset(exportPreset, customFrom, customTo)
+    if (!range) {
+      setExportError('Pick a valid date range')
+      return
+    }
+
+    setExporting(true)
+    try {
+      const startMs = range.start.getTime()
+      const endMs = range.end.getTime()
+      const inRange = shifts.filter((s) => {
+        if (s.status === 'open') return false
+        const t = new Date(s.openedAt).getTime()
+        return t >= startMs && t <= endMs
+      })
+
+      const store = useShiftsStore.getState()
+
+      // Pull child rows + nozzle readings for each shift. We re-fetch to be
+      // safe — store may not yet have entries for shifts the user never opened.
+      await Promise.all(
+        inRange.map(async (s) => {
+          const tasks: Promise<void>[] = []
+          const hasReadings = store.nozzleReadings.some((r) => r.shiftId === s.id)
+          if (!hasReadings) tasks.push(store.loadNozzleReadings(s.id))
+          tasks.push(store.loadShiftEntries(s.id))
+          await Promise.all(tasks)
+        }),
+      )
+
+      const fresh = useShiftsStore.getState()
+      const readingsByShift = new Map<string, typeof fresh.nozzleReadings>()
+      const otherSalesByShift = new Map<string, typeof fresh.otherSales>()
+      const electronicByShift = new Map<string, typeof fresh.electronicEntries>()
+      const expensesByShift = new Map<string, typeof fresh.expenseEntries>()
+      const creditByShift = new Map<string, typeof fresh.creditEntries>()
+
+      for (const s of inRange) {
+        readingsByShift.set(s.id, fresh.nozzleReadings.filter((r) => r.shiftId === s.id))
+        otherSalesByShift.set(s.id, fresh.otherSales.filter((r) => r.shiftId === s.id))
+        electronicByShift.set(s.id, fresh.electronicEntries.filter((r) => r.shiftId === s.id))
+        expensesByShift.set(s.id, fresh.expenseEntries.filter((r) => r.shiftId === s.id))
+        creditByShift.set(s.id, fresh.creditEntries.filter((r) => r.shiftId === s.id))
+      }
+
+      const msRate = fuelPrices.find((p) => p.fuelType === 'MS')?.pricePerLitre ?? 0
+      const hsdRate = fuelPrices.find((p) => p.fuelType === 'HSD')?.pricePerLitre ?? 0
+
+      generateShiftReport({
+        bunkName: bunk.name || 'Petro Desk',
+        startDate: range.start,
+        endDate: range.end,
+        shifts: inRange,
+        readingsByShift,
+        otherSalesByShift,
+        electronicByShift,
+        expensesByShift,
+        creditByShift,
+        dispenserUnits,
+        nozzlesById,
+        msRate,
+        hsdRate,
+        rangeLabel: formatRangeLabel(range.start, range.end),
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Export failed'
+      setExportError(message)
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const closedShifts = shifts.filter((s) => s.status === 'closed')
   const totalRevenue = closedShifts.reduce((sum, s) => sum + s.totalCashCollected, 0)
@@ -242,6 +418,136 @@ export default function ReportsPage() {
   }
   const totalDeliveryAmount = deliveries.reduce((sum, d) => sum + (d.totalAmount ?? 0), 0)
   const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0)
+
+  // ── Bank Deposits derivation ─────────────────────────────────
+  // Bucket each closed/flagged shift by its closing date (YYYY-MM-DD)
+  // and sum cashInHand to produce the "expected" deposit for that date.
+  // Filter to the selected preset range, then fold in any persisted
+  // bank_deposit rows so we can show pre-saved deposit + notes.
+  const bankRange = rangeForPreset(bankPreset, bankCustomFrom, bankCustomTo)
+
+  function shiftBankDate(s: typeof shifts[number]): string {
+    // Use closedAt for closed/flagged shifts; openedAt as a safety fallback.
+    const iso = s.closedAt ?? s.openedAt
+    return iso.split('T')[0]
+  }
+
+  const bankExpectedByDate = useMemo(() => {
+    const m = new Map<string, number>()
+    if (!bankRange) return m
+    const startMs = bankRange.start.getTime()
+    const endMs = bankRange.end.getTime()
+    for (const s of shifts) {
+      if (s.status !== 'closed' && s.status !== 'flagged') continue
+      const ts = new Date(s.closedAt ?? s.openedAt).getTime()
+      if (ts < startMs || ts > endMs) continue
+      const date = shiftBankDate(s)
+      m.set(date, (m.get(date) ?? 0) + s.cashInHand)
+    }
+    return m
+  }, [shifts, bankRange])
+
+  const bankDepositByDate = useMemo(() => {
+    const m = new Map<string, typeof bankDeposits[number]>()
+    for (const b of bankDeposits) m.set(b.depositDate, b)
+    return m
+  }, [bankDeposits])
+
+  interface BankRow {
+    depositDate: string
+    expectedAmount: number
+    persistedDepositedAmount: number | null
+    persistedNotes: string | null
+    persistedId: string | null
+  }
+
+  const bankRows: BankRow[] = useMemo(() => {
+    const dates = new Set<string>(bankExpectedByDate.keys())
+    // Also include any bankDeposit row whose date sits inside the range
+    // but had no shift (e.g. correction entry).
+    if (bankRange) {
+      const startMs = bankRange.start.getTime()
+      const endMs = bankRange.end.getTime()
+      for (const b of bankDeposits) {
+        const t = parseLocalDate(b.depositDate).getTime()
+        if (t >= startMs && t <= endMs) dates.add(b.depositDate)
+      }
+    }
+    const rows: BankRow[] = Array.from(dates).map((date) => {
+      const persisted = bankDepositByDate.get(date) ?? null
+      return {
+        depositDate: date,
+        expectedAmount: bankExpectedByDate.get(date) ?? (persisted?.expectedAmount ?? 0),
+        persistedDepositedAmount: persisted ? persisted.depositedAmount : null,
+        persistedNotes: persisted ? persisted.notes : null,
+        persistedId: persisted ? persisted.id : null,
+      }
+    })
+    return rows.sort((a, b) => b.depositDate.localeCompare(a.depositDate))
+  }, [bankExpectedByDate, bankDeposits, bankDepositByDate, bankRange])
+
+  function getBankDraft(row: BankRow): { depositedAmount: string; notes: string } {
+    const draft = bankRowDrafts[row.depositDate]
+    if (draft) return draft
+    return {
+      depositedAmount:
+        row.persistedDepositedAmount != null ? String(row.persistedDepositedAmount) : '',
+      notes: row.persistedNotes ?? '',
+    }
+  }
+
+  function setBankDraft(date: string, patch: Partial<{ depositedAmount: string; notes: string }>) {
+    setBankRowDrafts((prev) => ({
+      ...prev,
+      [date]: { ...(prev[date] ?? { depositedAmount: '', notes: '' }), ...patch },
+    }))
+  }
+
+  async function handleSaveBankRow(row: BankRow) {
+    const draft = getBankDraft(row)
+    const depositedAmount = parseFloat(draft.depositedAmount)
+    if (isNaN(depositedAmount) || depositedAmount < 0) {
+      setBankError('Enter a valid deposited amount')
+      return
+    }
+    setBankError(null)
+    setBankSavingDate(row.depositDate)
+    try {
+      await upsertBankDeposit({
+        depositDate: row.depositDate,
+        expectedAmount: row.expectedAmount,
+        depositedAmount,
+        depositedByUserId: currentUser && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(currentUser.id) ? currentUser.id : null,
+        notes: draft.notes ? draft.notes : null,
+      })
+      // Clear the local draft so the row picks up the persisted values.
+      setBankRowDrafts((prev) => {
+        const next: Record<string, { depositedAmount: string; notes: string }> = {}
+        for (const [k, v] of Object.entries(prev)) {
+          if (k !== row.depositDate) next[k] = v
+        }
+        return next
+      })
+    } catch (err) {
+      setBankError(err instanceof Error ? err.message : 'Failed to save deposit')
+    } finally {
+      setBankSavingDate(null)
+    }
+  }
+
+  // Range summary band totals — driven by current draft if user is editing.
+  const bankSummary = bankRows.reduce(
+    (acc, row) => {
+      const draft = getBankDraft(row)
+      const depParsed = parseFloat(draft.depositedAmount)
+      const deposited = isNaN(depParsed) ? row.persistedDepositedAmount ?? 0 : depParsed
+      acc.expected += row.expectedAmount
+      acc.deposited += deposited
+      acc.petty += row.expectedAmount - deposited
+      return acc
+    },
+    { expected: 0, deposited: 0, petty: 0 },
+  )
 
   function handleDeleteDelivery(d: TankerDelivery) {
     if (!confirm(`Delete delivery of ${d.quantityL}L ${d.fuelType} from ${d.supplierName ?? 'unknown supplier'}?`)) return
@@ -297,6 +603,58 @@ export default function ReportsPage() {
 
       {activeTab === 'daily' && (
         <div className="flex flex-col gap-4 sm:gap-6">
+          {canExport && (
+            <section className="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm p-3 sm:p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex flex-col gap-2 sm:flex-1">
+                  <div className="flex flex-wrap gap-1.5">
+                    {EXPORT_PRESETS.map((p) => (
+                      <button
+                        key={p.value}
+                        type="button"
+                        onClick={() => setExportPreset(p.value)}
+                        className={cn(
+                          'px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-colors border',
+                          exportPreset === p.value
+                            ? 'bg-primary text-on-primary border-primary'
+                            : 'bg-surface-container text-on-surface-variant border-outline-variant hover:text-on-surface',
+                        )}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                  {exportPreset === 'custom' && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        type="date"
+                        value={customFrom}
+                        onChange={(e) => setCustomFrom(e.target.value)}
+                        className={cn(INPUT, 'sm:w-40')}
+                      />
+                      <span className="text-on-surface-variant text-sm">→</span>
+                      <input
+                        type="date"
+                        value={customTo}
+                        onChange={(e) => setCustomTo(e.target.value)}
+                        className={cn(INPUT, 'sm:w-40')}
+                      />
+                    </div>
+                  )}
+                  {exportError && <p className="text-rose-600 text-xs">{exportError}</p>}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleExportPdf}
+                  disabled={exporting}
+                  className="w-full sm:w-auto px-4 py-2 rounded-lg bg-secondary-container text-on-surface text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-50 whitespace-nowrap"
+                >
+                  {exporting ? 'Exporting…' : 'Export PDF'}
+                </button>
+              </div>
+            </section>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
             {[
               { label: 'Total Revenue', value: `₹${totalRevenue.toLocaleString('en-IN')}`, sub: 'from closed shifts' },
@@ -598,6 +956,273 @@ export default function ReportsPage() {
             }
           }}
         />
+      )}
+
+      {activeTab === 'bank' && canSeeBankTab && (
+        <div className="flex flex-col gap-4 sm:gap-6">
+          {/* Date-range presets — independent of the PDF export presets above */}
+          <div className="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm p-3 sm:p-4">
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-wrap gap-1.5">
+                {EXPORT_PRESETS.map((p) => (
+                  <button
+                    key={p.value}
+                    type="button"
+                    onClick={() => setBankPreset(p.value)}
+                    className={cn(
+                      'px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-colors border',
+                      bankPreset === p.value
+                        ? 'bg-primary text-on-primary border-primary'
+                        : 'bg-surface-container text-on-surface-variant border-outline-variant hover:text-on-surface',
+                    )}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              {bankPreset === 'custom' && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    type="date"
+                    value={bankCustomFrom}
+                    onChange={(e) => setBankCustomFrom(e.target.value)}
+                    className={cn(INPUT, 'sm:w-40')}
+                  />
+                  <span className="text-on-surface-variant text-sm">→</span>
+                  <input
+                    type="date"
+                    value={bankCustomTo}
+                    onChange={(e) => setBankCustomTo(e.target.value)}
+                    className={cn(INPUT, 'sm:w-40')}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Top summary band */}
+          <div className="bg-secondary-container rounded-xl px-4 sm:px-5 py-3 flex flex-col gap-1">
+            <p className="text-on-surface-variant text-xs font-medium">
+              {bankRange
+                ? `Range: ${formatRangeLabel(bankRange.start, bankRange.end)}`
+                : 'Range: pick a valid window'}
+            </p>
+            <p className="text-on-surface text-sm font-semibold flex flex-wrap gap-x-4 gap-y-1">
+              <span>Total expected: ₹{Math.round(bankSummary.expected).toLocaleString('en-IN')}</span>
+              <span className="text-on-surface-variant">·</span>
+              <span>Total deposited: ₹{Math.round(bankSummary.deposited).toLocaleString('en-IN')}</span>
+              <span className="text-on-surface-variant">·</span>
+              <span>
+                Total petty cash:{' '}
+                <span
+                  className={cn(
+                    bankSummary.petty < 0
+                      ? 'text-rose-600'
+                      : bankSummary.petty === 0
+                      ? 'text-on-surface-variant'
+                      : 'text-on-surface',
+                  )}
+                >
+                  ₹{Math.round(bankSummary.petty).toLocaleString('en-IN')}
+                </span>
+              </span>
+            </p>
+          </div>
+
+          {bankError && (
+            <p className="text-rose-600 text-xs">{bankError}</p>
+          )}
+
+          {/* Desktop / tablet table */}
+          <div className="hidden lg:block bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-surface-container border-b border-outline-variant">
+                <tr>
+                  <th className="text-left px-5 py-3 text-on-surface-variant font-semibold text-xs uppercase tracking-wider whitespace-nowrap">Date</th>
+                  <th className="text-right px-5 py-3 text-on-surface-variant font-semibold text-xs uppercase tracking-wider whitespace-nowrap">Expected</th>
+                  <th className="text-right px-5 py-3 text-on-surface-variant font-semibold text-xs uppercase tracking-wider whitespace-nowrap">Deposited</th>
+                  <th className="text-right px-5 py-3 text-on-surface-variant font-semibold text-xs uppercase tracking-wider whitespace-nowrap">Petty Cash</th>
+                  <th className="text-left px-5 py-3 text-on-surface-variant font-semibold text-xs uppercase tracking-wider">Notes</th>
+                  <th className="px-5 py-3"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {bankRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-8 text-center text-on-surface-variant text-sm">
+                      No closed shifts in this range
+                    </td>
+                  </tr>
+                ) : (
+                  bankRows.map((row, i) => {
+                    const draft = getBankDraft(row)
+                    const depParsed = parseFloat(draft.depositedAmount)
+                    const livePetty = isNaN(depParsed)
+                      ? row.expectedAmount - (row.persistedDepositedAmount ?? 0)
+                      : row.expectedAmount - depParsed
+                    const persistedDepStr =
+                      row.persistedDepositedAmount != null ? String(row.persistedDepositedAmount) : ''
+                    const persistedNotesStr = row.persistedNotes ?? ''
+                    const isDirty =
+                      draft.depositedAmount !== persistedDepStr ||
+                      draft.notes !== persistedNotesStr
+                    const hasPersisted = row.persistedId !== null
+                    const buttonLabel = hasPersisted ? (isDirty ? 'Save' : 'Edit') : 'Save'
+                    const saving = bankSavingDate === row.depositDate
+                    return (
+                      <tr
+                        key={row.depositDate}
+                        className={cn('border-b border-outline-variant last:border-0', i % 2 ? 'bg-surface-container/30' : '')}
+                      >
+                        <td className="px-5 py-3 text-on-surface-variant whitespace-nowrap">
+                          {formatDate(row.depositDate + 'T00:00:00')}
+                        </td>
+                        <td className="px-5 py-3 text-on-surface text-right whitespace-nowrap font-medium">
+                          ₹{row.expectedAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                        <td className="px-5 py-3 text-right whitespace-nowrap">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={draft.depositedAmount}
+                            onChange={(e) => setBankDraft(row.depositDate, { depositedAmount: e.target.value })}
+                            placeholder="0.00"
+                            className={cn(INPUT, 'text-right w-32 ml-auto')}
+                          />
+                        </td>
+                        <td
+                          className={cn(
+                            'px-5 py-3 text-right whitespace-nowrap font-medium',
+                            livePetty < 0
+                              ? 'text-rose-600'
+                              : livePetty === 0
+                              ? 'text-on-surface-variant'
+                              : 'text-on-surface',
+                          )}
+                        >
+                          ₹{livePetty.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                        <td className="px-5 py-3">
+                          <input
+                            type="text"
+                            value={draft.notes}
+                            onChange={(e) => setBankDraft(row.depositDate, { notes: e.target.value })}
+                            placeholder="optional…"
+                            className={INPUT}
+                          />
+                        </td>
+                        <td className="px-5 py-3 whitespace-nowrap text-right">
+                          <button
+                            type="button"
+                            onClick={() => handleSaveBankRow(row)}
+                            disabled={saving || (hasPersisted && !isDirty && !draft.depositedAmount)}
+                            className="px-3 py-1.5 rounded-lg bg-primary text-on-primary text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+                          >
+                            {saving ? 'Saving…' : buttonLabel}
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile / tablet card list */}
+          <div className="lg:hidden flex flex-col gap-3">
+            {bankRows.length === 0 ? (
+              <p className="text-on-surface-variant text-sm text-center py-6">
+                No closed shifts in this range
+              </p>
+            ) : (
+              bankRows.map((row) => {
+                const draft = getBankDraft(row)
+                const depParsed = parseFloat(draft.depositedAmount)
+                const livePetty = isNaN(depParsed)
+                  ? row.expectedAmount - (row.persistedDepositedAmount ?? 0)
+                  : row.expectedAmount - depParsed
+                const persistedDepStr =
+                  row.persistedDepositedAmount != null ? String(row.persistedDepositedAmount) : ''
+                const persistedNotesStr = row.persistedNotes ?? ''
+                const isDirty =
+                  draft.depositedAmount !== persistedDepStr ||
+                  draft.notes !== persistedNotesStr
+                const hasPersisted = row.persistedId !== null
+                const buttonLabel = hasPersisted ? (isDirty ? 'Save' : 'Edit') : 'Save'
+                const saving = bankSavingDate === row.depositDate
+                return (
+                  <div
+                    key={row.depositDate}
+                    className="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm p-4 flex flex-col gap-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="text-on-surface font-semibold text-sm">
+                        {formatDate(row.depositDate + 'T00:00:00')}
+                      </p>
+                      <p className="text-on-surface-variant text-xs">
+                        Expected{' '}
+                        <span className="text-on-surface font-medium">
+                          ₹{row.expectedAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-on-surface-variant text-xs font-medium mb-1">Deposited (₹)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={draft.depositedAmount}
+                        onChange={(e) => setBankDraft(row.depositDate, { depositedAmount: e.target.value })}
+                        placeholder="0.00"
+                        className={INPUT}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-on-surface-variant text-xs font-medium mb-1">Notes</label>
+                      <input
+                        type="text"
+                        value={draft.notes}
+                        onChange={(e) => setBankDraft(row.depositDate, { notes: e.target.value })}
+                        placeholder="optional…"
+                        className={INPUT}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <p
+                        className={cn(
+                          'text-sm font-medium',
+                          livePetty < 0
+                            ? 'text-rose-600'
+                            : livePetty === 0
+                            ? 'text-on-surface-variant'
+                            : 'text-on-surface',
+                        )}
+                      >
+                        Petty cash: ₹{livePetty.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveBankRow(row)}
+                        disabled={saving || (hasPersisted && !isDirty && !draft.depositedAmount)}
+                        className="px-3 py-1.5 rounded-lg bg-primary text-on-primary text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+                      >
+                        {saving ? 'Saving…' : buttonLabel}
+                      </button>
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+
+          <p className="text-on-surface-variant text-xs">
+            Expected = sum of each day's closed-shift cash-in-hand. Petty cash = expected − deposited
+            (positive: kept aside; negative: investigate).
+          </p>
+        </div>
       )}
 
       {expenseModal.open && (
