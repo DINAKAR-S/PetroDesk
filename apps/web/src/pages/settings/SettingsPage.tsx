@@ -127,10 +127,23 @@ function BunkProfileTab() {
 }
 
 /* ── Dispenser Units Tab ── */
+// Parse a user-typed string as a non-negative finite number.
+// Returns null on empty / NaN / negative / Infinity. Used by every
+// "Initial Meter Reading" input. `Number.isFinite` rejects Infinity which
+// `Number.isNaN` would otherwise let through.
+function parseNonNeg(s: string): number | null {
+  if (s.trim() === '') return null
+  const v = Number(s)
+  return Number.isFinite(v) && v >= 0 ? v : null
+}
+
 type NozzleSlotForm = {
   name: string
   fuelType: FuelType
   tankId: string
+  // String-typed while editing so inputs can be cleared; parsed on save.
+  initialCumVolume: string
+  initialCumSale: string
 }
 
 type AddDuForm = {
@@ -148,11 +161,12 @@ function defaultNozzleRows(tanks: Tank[]): NozzleSlotForm[] {
   // Default 4 slots: 1,2 = MS, 3,4 = HSD. User can change any.
   const firstMsTank = tanks.find((t) => t.fuelType === 'MS')?.id ?? ''
   const firstHsdTank = tanks.find((t) => t.fuelType === 'HSD')?.id ?? ''
+  const blank = { initialCumVolume: '0', initialCumSale: '0' }
   return [
-    { name: 'Nozzle 1', fuelType: 'MS', tankId: firstMsTank },
-    { name: 'Nozzle 2', fuelType: 'MS', tankId: firstMsTank },
-    { name: 'Nozzle 3', fuelType: 'HSD', tankId: firstHsdTank },
-    { name: 'Nozzle 4', fuelType: 'HSD', tankId: firstHsdTank },
+    { name: 'Nozzle 1', fuelType: 'MS', tankId: firstMsTank, ...blank },
+    { name: 'Nozzle 2', fuelType: 'MS', tankId: firstMsTank, ...blank },
+    { name: 'Nozzle 3', fuelType: 'HSD', tankId: firstHsdTank, ...blank },
+    { name: 'Nozzle 4', fuelType: 'HSD', tankId: firstHsdTank, ...blank },
   ]
 }
 
@@ -211,13 +225,44 @@ function DispenserUnitsTab() {
       return
     }
     const displayName = addForm.displayName.trim() || `DU ${number}`
-    // Validate every nozzle row has a tank selected.
+
+    // Validate ALL rows up-front, BEFORE any DB writes. If we let an invalid
+    // row trip the loop after some inserts succeed we'd be left with an
+    // orphan DU and a partial set of nozzles that the user can't easily fix.
+    interface ValidatedRow {
+      name: string
+      fuelType: FuelType
+      tankId: string
+      slot: NozzleSlot
+      initialCumVolume: number
+      initialCumSale: number
+    }
+    const rows: ValidatedRow[] = []
     for (let i = 0; i < addForm.nozzles.length; i++) {
       const n = addForm.nozzles[i]
+      const slot = (i + 1) as NozzleSlot
       if (!n.tankId) {
-        setError(`Slot ${i + 1}: select a ${n.fuelType === 'MS' ? 'Petrol' : 'Diesel'} tank (or add one in the Tanks tab first).`)
+        setError(`Slot ${slot}: select a ${n.fuelType === 'MS' ? 'Petrol' : 'Diesel'} tank (or add one in the Tanks tab first).`)
         return
       }
+      const vol = parseNonNeg(n.initialCumVolume)
+      if (vol === null) {
+        setError(`Slot ${slot}: Initial CumVolume must be a non-negative number`)
+        return
+      }
+      const sale = parseNonNeg(n.initialCumSale)
+      if (sale === null) {
+        setError(`Slot ${slot}: Initial CumSale must be a non-negative number`)
+        return
+      }
+      rows.push({
+        name: n.name.trim() || `Nozzle ${slot}`,
+        fuelType: n.fuelType,
+        tankId: n.tankId,
+        slot,
+        initialCumVolume: vol,
+        initialCumSale: sale,
+      })
     }
 
     setBusy(true)
@@ -229,16 +274,16 @@ function DispenserUnitsTab() {
         throw new Error('Dispenser unit was created but not found in store')
       }
 
-      // Create 4 nozzles in sequence so a failure mid-way is reported clearly.
-      for (let i = 0; i < addForm.nozzles.length; i++) {
-        const n = addForm.nozzles[i]
-        const slot = (i + 1) as NozzleSlot
+      // Sequential so the failing row's slot number is in the error.
+      for (const r of rows) {
         await addNozzle({
-          name: n.name.trim() || `Nozzle ${slot}`,
+          name: r.name,
           dispenserUnitId: newDu.id,
-          tankId: n.tankId,
-          slot,
-          fuelType: n.fuelType,
+          tankId: r.tankId,
+          slot: r.slot,
+          fuelType: r.fuelType,
+          initialCumVolume: r.initialCumVolume,
+          initialCumSale: r.initialCumSale,
         })
       }
       setModal(null)
@@ -424,10 +469,37 @@ function DispenserUnitsTab() {
                           No {n.fuelType === 'MS' ? 'Petrol' : 'Diesel'} tank exists. Add one in the Tanks tab.
                         </p>
                       )}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 pt-3 border-t border-outline-variant/50">
+                        <Field label="Initial CumVolume (L)">
+                          <input
+                            type="number"
+                            step="0.001"
+                            inputMode="decimal"
+                            value={n.initialCumVolume}
+                            onChange={(e) => updateNozzleRow(i, { initialCumVolume: e.target.value })}
+                            placeholder="0"
+                            className={INPUT_CLS}
+                          />
+                        </Field>
+                        <Field label="Initial CumSale (₹)">
+                          <input
+                            type="number"
+                            step="0.01"
+                            inputMode="decimal"
+                            value={n.initialCumSale}
+                            onChange={(e) => updateNozzleRow(i, { initialCumSale: e.target.value })}
+                            placeholder="0"
+                            className={INPUT_CLS}
+                          />
+                        </Field>
+                      </div>
                     </div>
                   )
                 })}
               </div>
+              <p className="text-on-surface-variant text-xs mt-3 italic">
+                Set the latest meter slip values for each nozzle so the first shift opens at the correct point. Leave at 0 if this is a brand-new pump.
+              </p>
             </div>
 
             {error && <p className="text-red-600 text-xs font-medium">{error}</p>}
@@ -654,6 +726,10 @@ type NozzleForm = {
   slot: NozzleSlot
   fuelType: FuelType
   tankId: string
+  // Stored as strings while editing so the input fields can be cleared
+  // (parsed to numbers on save).
+  initialCumVolume: string
+  initialCumSale: string
 }
 
 function makeEmptyNozzle(dispenserUnits: DispenserUnit[], tanks: Tank[]): NozzleForm {
@@ -665,6 +741,8 @@ function makeEmptyNozzle(dispenserUnits: DispenserUnit[], tanks: Tank[]): Nozzle
     slot: 1,
     fuelType: 'MS',
     tankId: firstMsTank?.id ?? '',
+    initialCumVolume: '0',
+    initialCumSale: '0',
   }
 }
 
@@ -709,6 +787,8 @@ function NozzlesTab() {
       slot: nozzle.slot,
       fuelType: nozzle.fuelType,
       tankId: nozzle.tankId,
+      initialCumVolume: String(nozzle.initialCumVolume ?? 0),
+      initialCumSale: String(nozzle.initialCumSale ?? 0),
     })
     setError(null)
     setModal({ mode: 'edit', nozzle })
@@ -728,6 +808,16 @@ function NozzlesTab() {
       setError(`Add a ${form.fuelType === 'MS' ? 'Petrol' : 'Diesel'} tank first`)
       return
     }
+    const initialCumVolume = parseNonNeg(form.initialCumVolume)
+    if (initialCumVolume === null) {
+      setError('Initial CumVolume must be a non-negative number')
+      return
+    }
+    const initialCumSale = parseNonNeg(form.initialCumSale)
+    if (initialCumSale === null) {
+      setError('Initial CumSale must be a non-negative number')
+      return
+    }
     try {
       if (modal?.mode === 'add') {
         await addNozzle({
@@ -736,6 +826,8 @@ function NozzlesTab() {
           slot: form.slot,
           fuelType: form.fuelType,
           tankId: form.tankId,
+          initialCumVolume,
+          initialCumSale,
         })
       } else if (modal?.nozzle) {
         await updateNozzle(modal.nozzle.id, {
@@ -744,6 +836,8 @@ function NozzlesTab() {
           slot: form.slot,
           fuelType: form.fuelType,
           tankId: form.tankId,
+          initialCumVolume,
+          initialCumSale,
         })
       }
       setModal(null)
@@ -818,6 +912,9 @@ function NozzlesTab() {
                 </p>
                 <p className="text-on-surface-variant text-xs break-words">
                   {nozzle.fuelType} · {getTankName(nozzle.tankId)}
+                </p>
+                <p className="text-on-surface-variant text-[11px] break-words mt-1">
+                  Initial: {nozzle.initialCumVolume.toLocaleString('en-IN')} L · ₹{nozzle.initialCumSale.toLocaleString('en-IN')}
                 </p>
               </div>
             </div>
@@ -931,6 +1028,41 @@ function NozzlesTab() {
                 </select>
               )}
             </Field>
+
+            <div className="border-t border-outline-variant pt-3 mt-1">
+              <p className="text-on-surface text-sm font-semibold mb-1">Initial Meter Reading</p>
+              <p className="text-on-surface-variant text-xs mb-3">
+                The first shift on this nozzle will use these as its opening values.
+                Subsequent shifts pick up from the previous shift's closing automatically.
+                Use the most recent printer slip from this nozzle.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Field label="Initial CumVolume (L)">
+                  <input
+                    type="number"
+                    step="0.001"
+                    inputMode="decimal"
+                    value={form.initialCumVolume}
+                    onChange={(e) => setForm({ ...form, initialCumVolume: e.target.value })}
+                    placeholder="0"
+                    className={INPUT_CLS}
+                    disabled={noDuYet}
+                  />
+                </Field>
+                <Field label="Initial CumSale (₹)">
+                  <input
+                    type="number"
+                    step="0.01"
+                    inputMode="decimal"
+                    value={form.initialCumSale}
+                    onChange={(e) => setForm({ ...form, initialCumSale: e.target.value })}
+                    placeholder="0"
+                    className={INPUT_CLS}
+                    disabled={noDuYet}
+                  />
+                </Field>
+              </div>
+            </div>
 
             {error && (
               <p className="text-red-600 text-xs font-medium">{error}</p>

@@ -867,8 +867,11 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
         nozzleName: n.name,
         fuelType: n.fuelType,
         slot: n.slot,
-        openingCumVolume: prev?.volume ?? 0,
-        openingCumSale: prev?.sale ?? 0,
+        // Priority: previous shift's closing → nozzle's configured initial.
+        // The Nozzle type guarantees `initialCumVolume`/`initialCumSale` are
+        // numbers (default 0 from the DB column), so no further fallback needed.
+        openingCumVolume: prev?.volume ?? n.initialCumVolume,
+        openingCumSale: prev?.sale ?? n.initialCumSale,
       }
     })
   },

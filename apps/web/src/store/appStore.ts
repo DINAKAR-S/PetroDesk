@@ -132,6 +132,8 @@ export const useAppStore = create<AppState>((set, get) => ({
             tankId: n.tank_id as string,
             slot: Number(n.slot) as NozzleSlot,
             fuelType: n.fuel_type as 'MS' | 'HSD',
+            initialCumVolume: Number(n.initial_cum_volume ?? 0),
+            initialCumSale: Number(n.initial_cum_sale ?? 0),
           })),
         })
       }
@@ -351,6 +353,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       slot: n.slot,
       fuel_type: n.fuelType,
       name: n.name,
+      initial_cum_volume: n.initialCumVolume,
+      initial_cum_sale: n.initialCumSale,
     }).select().single()
     if (error) {
       throw new Error(error.message)
@@ -366,6 +370,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         tankId: data.tank_id as string,
         slot: Number(data.slot) as NozzleSlot,
         fuelType: data.fuel_type as 'MS' | 'HSD',
+        initialCumVolume: Number(data.initial_cum_volume ?? 0),
+        initialCumSale: Number(data.initial_cum_sale ?? 0),
       }],
     }))
   },
@@ -410,13 +416,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     set((s) => ({ nozzles: s.nozzles.map((n) => (n.id === id ? { ...n, ...data } : n)) }))
-    await supabase.from('nozzles').update({
-      name: data.name,
-      dispenser_unit_id: data.dispenserUnitId,
-      tank_id: data.tankId,
-      slot: data.slot,
-      fuel_type: data.fuelType,
-    }).eq('id', id)
+    // Build the DB update payload from only the fields that were provided.
+    // Snake-case mapping: TS camelCase → Postgres column names.
+    const payload: Record<string, unknown> = {}
+    if (data.name !== undefined) payload.name = data.name
+    if (data.dispenserUnitId !== undefined) payload.dispenser_unit_id = data.dispenserUnitId
+    if (data.tankId !== undefined) payload.tank_id = data.tankId
+    if (data.slot !== undefined) payload.slot = data.slot
+    if (data.fuelType !== undefined) payload.fuel_type = data.fuelType
+    if (data.initialCumVolume !== undefined) payload.initial_cum_volume = data.initialCumVolume
+    if (data.initialCumSale !== undefined) payload.initial_cum_sale = data.initialCumSale
+    const { error } = await supabase.from('nozzles').update(payload).eq('id', id)
+    if (error) throw new Error(error.message)
   },
 
   deleteNozzle: async (id) => {

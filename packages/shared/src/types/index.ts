@@ -40,8 +40,6 @@ export interface Nozzle {
   tankId: string
   slot: NozzleSlot
   fuelType: FuelType
-  // Seed values for the FIRST shift on this nozzle. After the first close,
-  // subsequent shifts pick up from the previous shift's closing instead.
   initialCumVolume: number
   initialCumSale: number
 }
@@ -69,7 +67,6 @@ export interface Shift {
   hsdLitres: number
   msRevenue: number
   hsdRevenue: number
-  // Phase 2: section totals stored on the shift for fast reporting
   testingMsVolume: number
   testingMsSale: number
   testingHsdVolume: number
@@ -83,8 +80,6 @@ export interface Shift {
   depositToOwner: number
   notes: string | null
 }
-
-// ─── Phase 2 catalogs (configured in Settings) ──────────────
 
 export interface OtherSalesItem {
   id: string
@@ -112,8 +107,6 @@ export interface Customer {
   phone: string | null
   notes: string | null
 }
-
-// ─── Phase 2 per-shift entries ──────────────────────────────
 
 export interface ShiftOtherSale {
   id: string
