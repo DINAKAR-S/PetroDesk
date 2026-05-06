@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAppStore } from '@/store/appStore'
 import { useShiftsStore, type DateFilter } from '@/store/shiftsStore'
 import { useCustomersStore } from '@/store/customersStore'
+import ExportShiftReportPanel from '@/components/ExportShiftReportPanel'
 import { cn, stockPercent } from '@/lib/utils'
 
 const DATE_FILTERS: { label: string; value: DateFilter }[] = [
@@ -84,6 +85,9 @@ export default function OwnerDashboard() {
           ))}
         </div>
       </div>
+
+      {/* PDF export — moved here from the Reports page so it's one click from the dashboard */}
+      <ExportShiftReportPanel />
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">

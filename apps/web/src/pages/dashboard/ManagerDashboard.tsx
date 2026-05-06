@@ -1,4 +1,5 @@
 import { useShiftsStore, type DateFilter } from '@/store/shiftsStore'
+import ExportShiftReportPanel from '@/components/ExportShiftReportPanel'
 import { cn } from '@/lib/utils'
 
 const DATE_FILTERS: { label: string; value: DateFilter }[] = [
@@ -103,6 +104,9 @@ export default function ManagerDashboard() {
           ))}
         </div>
       </div>
+
+      {/* PDF export — moved here from the Reports page */}
+      <ExportShiftReportPanel />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <div className="bg-surface-container-lowest p-4 sm:p-6 rounded-xl border border-outline-variant shadow-sm">

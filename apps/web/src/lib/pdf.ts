@@ -19,8 +19,15 @@ const COLOR_BORDER: [number, number, number] = [220, 220, 220]
 const COLOR_HEADER_BG: [number, number, number] = [245, 245, 247]
 const COLOR_NAVY: [number, number, number] = [0, 36, 82]
 
-const PAGE_MARGIN = 36 // pt — ~12.7mm
-const COLUMN_GAP = 12
+const PAGE_MARGIN = 42 // pt — ~14.8mm
+const COLUMN_GAP = 16
+const CARD_GAP = 14   // vertical gap between cards in successive pairs
+const SECTION_GAP = 6 // gap between the inner sections of a single card
+
+// jsPDF's standard Helvetica is Latin-1 only — Unicode glyphs like →, •, ·
+// silently mangle adjacent characters. Stick to ASCII for body text.
+const ARROW = ' to '
+const DOT = ' | '
 
 interface ShiftReportInput {
   bunkName: string
@@ -136,27 +143,27 @@ function renderShiftCard(
   const startY = y
   let cursorY = y
 
-  // Card border + title bar
-  const titleHeight = 22
+  // Card border + title bar — taller, more padding
+  const titleHeight = 30
   doc.setDrawColor(...COLOR_BORDER)
   doc.setFillColor(...COLOR_HEADER_BG)
-  doc.roundedRect(x, cursorY, width, titleHeight, 4, 4, 'FD')
+  doc.roundedRect(x, cursorY, width, titleHeight, 5, 5, 'FD')
 
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(10)
+  doc.setFontSize(11)
   doc.setTextColor(...COLOR_NAVY)
-  const shiftIndex = `Shift • ${block.shift.salesmanName}`
-  doc.text(shiftIndex, x + 8, cursorY + 9)
+  const shiftTitle = `Shift  -  ${block.shift.salesmanName}`
+  doc.text(shiftTitle, x + 12, cursorY + 12)
 
   doc.setFont('helvetica', 'normal')
-  doc.setFontSize(8)
+  doc.setFontSize(9)
   doc.setTextColor(...COLOR_MUTED)
-  const timeRange = `${formatTime(block.shift.openedAt)} → ${formatTime(block.shift.closedAt)}  •  ${duLabel(block, input.dispenserUnits)}`
-  doc.text(timeRange, x + 8, cursorY + 18)
+  const timeRange = `${formatTime(block.shift.openedAt)}${ARROW}${formatTime(block.shift.closedAt)}${DOT}${duLabel(block, input.dispenserUnits)}`
+  doc.text(timeRange, x + 12, cursorY + 24)
 
-  cursorY += titleHeight + 4
+  cursorY += titleHeight + SECTION_GAP
 
-  // Nozzle readings table
+  // Nozzle readings table — first column padded so number cells align right.
   const readingRows: Array<Array<{ content: string; styles?: Record<string, unknown> }>> = []
   for (const r of block.readings) {
     const fuelLabel = r.fuelType === 'MS' ? 'Petrol' : 'Diesel'
@@ -168,7 +175,11 @@ function renderShiftCard(
     ])
   }
   if (readingRows.length === 0) {
-    readingRows.push([{ content: 'No nozzle readings recorded', styles: { textColor: COLOR_MUTED, fontStyle: 'italic' } }, { content: '' }, { content: '' }])
+    readingRows.push([
+      { content: 'No nozzle readings recorded', styles: { textColor: COLOR_MUTED, fontStyle: 'italic' } },
+      { content: '' },
+      { content: '' },
+    ])
   }
 
   autoTable(doc, {
@@ -177,14 +188,14 @@ function renderShiftCard(
     tableWidth: width,
     body: readingRows,
     theme: 'plain',
-    styles: { fontSize: 8.5, cellPadding: 2.5, textColor: COLOR_BLACK, lineColor: COLOR_BORDER, lineWidth: 0.2 },
+    styles: { fontSize: 9.5, cellPadding: { top: 5, right: 10, bottom: 5, left: 12 }, textColor: COLOR_BLACK, lineColor: COLOR_BORDER, lineWidth: 0.3 },
     columnStyles: {
-      0: { cellWidth: width * 0.5 },
-      1: { cellWidth: width * 0.22 },
-      2: { cellWidth: width * 0.28 },
+      0: { cellWidth: width * 0.46 },
+      1: { cellWidth: width * 0.24 },
+      2: { cellWidth: width * 0.30 },
     },
   })
-  cursorY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 4
+  cursorY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + SECTION_GAP
 
   // Section: Testing / Other / Electronic / Credit / Expense — color-coded
   const summaryRows: Array<Array<{ content: string; styles?: Record<string, unknown> }>> = []
@@ -236,13 +247,13 @@ function renderShiftCard(
       tableWidth: width,
       body: summaryRows,
       theme: 'plain',
-      styles: { fontSize: 8.5, cellPadding: 2.5, textColor: COLOR_BLACK, lineColor: COLOR_BORDER, lineWidth: 0.2 },
+      styles: { fontSize: 9.5, cellPadding: { top: 5, right: 10, bottom: 5, left: 12 }, textColor: COLOR_BLACK, lineColor: COLOR_BORDER, lineWidth: 0.3 },
       columnStyles: {
         0: { cellWidth: width * 0.55 },
         1: { cellWidth: width * 0.45 },
       },
     })
-    cursorY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 4
+    cursorY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + SECTION_GAP
   }
 
   // Footer: cash-in-hand + variance
@@ -267,7 +278,7 @@ function renderShiftCard(
     tableWidth: width,
     body: footerRows,
     theme: 'plain',
-    styles: { fontSize: 9, cellPadding: 3, fillColor: COLOR_HEADER_BG, lineColor: COLOR_BORDER, lineWidth: 0.2 },
+    styles: { fontSize: 10, cellPadding: { top: 6, right: 10, bottom: 6, left: 12 }, fillColor: COLOR_HEADER_BG, lineColor: COLOR_BORDER, lineWidth: 0.3 },
     columnStyles: {
       0: { cellWidth: width * 0.55 },
       1: { cellWidth: width * 0.45 },
@@ -277,7 +288,7 @@ function renderShiftCard(
 
   // Outer card border (drawn last to enclose all content)
   doc.setDrawColor(...COLOR_BORDER)
-  doc.roundedRect(x, startY, width, cursorY - startY, 4, 4, 'S')
+  doc.roundedRect(x, startY, width, cursorY - startY, 5, 5, 'S')
 
   return cursorY
 }
@@ -300,11 +311,11 @@ function renderDayTotal(
   )
 
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(9)
+  doc.setFontSize(10)
   doc.setTextColor(...COLOR_NAVY)
-  const summary = `Day total: ${formatINR(totals.revenue)}  •  Litres ${formatLitres(totals.litres)}  •  Cash in hand ${formatINR(totals.cashInHand)}`
+  const summary = `Day total: ${formatINR(totals.revenue)}${DOT}Litres ${formatLitres(totals.litres)}${DOT}Cash in hand ${formatINR(totals.cashInHand)}`
   doc.text(summary, startX, y, { maxWidth: endX - startX })
-  return y + 12
+  return y + 14
 }
 
 export function generateShiftReport(input: ShiftReportInput): void {
@@ -315,26 +326,27 @@ export function generateShiftReport(input: ShiftReportInput): void {
 
   // ── Header ──────────────────────────────────────────────
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(16)
+  doc.setFontSize(18)
   doc.setTextColor(...COLOR_NAVY)
-  doc.text(input.bunkName, PAGE_MARGIN, cursorY + 4)
+  doc.text(input.bunkName, PAGE_MARGIN, cursorY + 6)
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(11)
+  doc.setTextColor(...COLOR_MUTED)
+  doc.text(input.rangeLabel, pageWidth - PAGE_MARGIN, cursorY + 6, { align: 'right' })
+  cursorY += 22
 
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(10)
-  doc.setTextColor(...COLOR_MUTED)
-  doc.text(input.rangeLabel, pageWidth - PAGE_MARGIN, cursorY + 4, { align: 'right' })
-  cursorY += 16
-
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(9)
   doc.setTextColor(...COLOR_BLACK)
-  const rateLine = `Petrol (MS): Rs ${input.msRate.toFixed(2)}/L  •  Diesel (HSD): Rs ${input.hsdRate.toFixed(2)}/L`
+  const rateLine = `Petrol (MS): Rs ${input.msRate.toFixed(2)}/L${DOT}Diesel (HSD): Rs ${input.hsdRate.toFixed(2)}/L`
   doc.text(rateLine, PAGE_MARGIN, cursorY + 4)
-  cursorY += 14
+  cursorY += 18
 
   doc.setDrawColor(...COLOR_BORDER)
+  doc.setLineWidth(0.5)
   doc.line(PAGE_MARGIN, cursorY, pageWidth - PAGE_MARGIN, cursorY)
-  cursorY += 12
+  cursorY += 18
 
   // ── Group + render by day ───────────────────────────────
   const grouped = groupShiftsByDate(input.shifts)
@@ -353,14 +365,14 @@ export function generateShiftReport(input: ShiftReportInput): void {
     const dayShifts = grouped.get(dateKey) ?? []
     if (dayShifts.length === 0) continue
 
-    cursorY = ensureSpace(doc, 60, cursorY)
+    cursorY = ensureSpace(doc, 80, cursorY)
 
-    // Day header
+    // Day header — bold + larger + a subtle underline for visual separation
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(12)
+    doc.setFontSize(13)
     doc.setTextColor(...COLOR_BLACK)
-    doc.text(formatDayHeader(dateKey), PAGE_MARGIN, cursorY + 4)
-    cursorY += 14
+    doc.text(formatDayHeader(dateKey), PAGE_MARGIN, cursorY + 6)
+    cursorY += 20
 
     // Render shift cards in pairs (2 columns). For odd counts the last card
     // takes only the left column (full width would visually break the grid).
@@ -388,14 +400,14 @@ export function generateShiftReport(input: ShiftReportInput): void {
         rightEnd = renderShiftCard(doc, rightBlock, rightX, startCardY, colWidth, input)
       }
 
-      cursorY = Math.max(leftEnd, rightEnd) + 8
+      cursorY = Math.max(leftEnd, rightEnd) + CARD_GAP
       i += 2
     }
 
     // Day total line
-    cursorY = ensureSpace(doc, 18, cursorY)
+    cursorY = ensureSpace(doc, 22, cursorY)
     cursorY = renderDayTotal(doc, dayShifts, PAGE_MARGIN, pageWidth - PAGE_MARGIN, cursorY)
-    cursorY += 10
+    cursorY += 18
   }
 
   // ── Footer page numbers ─────────────────────────────────
