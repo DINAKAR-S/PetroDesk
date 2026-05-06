@@ -4,10 +4,19 @@
   "scripts": {
     "dev": "pnpm -C apps/web dev",
     "build": "pnpm -C apps/web build",
-    "preview": "pnpm -C apps/web preview"
+    "preview": "pnpm -C apps/web preview",
+    "mobile": "pnpm -C apps/mobile start"
   },
   "engines": {
     "node": ">=18.0.0",
     "pnpm": ">=8.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "react": "18.3.1",
+      "react-dom": "18.3.1",
+      "@types/react": "18.3.3",
+      "@types/react-dom": "18.3.0"
+    }
   }
 }
